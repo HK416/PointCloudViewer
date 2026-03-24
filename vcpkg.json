@@ -2,6 +2,9 @@
     "name": "point-cloud-viewer",
     "version": "1.0.0",
     "dependencies": [
-        "pdal"
+      "pdal",
+      "vulkan",
+      "glm",
+      "vulkan-memory-allocator"
     ]
 }
