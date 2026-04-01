@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 class Application {
 public:
     Application() = delete;
@@ -10,10 +8,27 @@ public:
     ~Application();
 
 public:
-    void run();
+    template<typename T> 
+    Application& insertResource() {
+        m_registry.ctx().emplace<T>();
+        return *this;
+    }
 
-    static LRESULT CALLBACK
-    wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    template<typename T, typename... Args>
+    Application& insertResource(Args&&... args) {
+        m_registry.ctx().emplace<T>(std::forward<Args>(args)...);
+        return *this;
+    }
+
+    Application& addStartupSystem(std::function<void(entt::registry&)> system);
+    Application& addInputSystem(std::function<void(entt::registry&, UINT, WPARAM, LPARAM)> system);
+    Application& addUpdateSystem(std::function<void(entt::registry&)> system);
+    Application& addRenderSystem(std::function<void(entt::registry&)> system);
+
+    void run();
+    LRESULT onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+    static LRESULT CALLBACK wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
     HWND createWindow(
@@ -30,15 +45,15 @@ private:
     void createRenderDevice();
     void createRenderSwapchain(LONG width, LONG height);
     void createImageViews();
-    void createRenderPass();
     void createDepthResources();
-    void createFramebuffers();
 
     // Rendering Logic Helpers
     void createCommandPool();
     void createCommandBuffers();
     void createSyncObjects();
     void drawFrame();
+    void recreateSwapchain();
+    void initializeResources();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 private:
@@ -68,10 +83,6 @@ private:
     VmaAllocation m_depthImageAllocation = VK_NULL_HANDLE;
     VkImageView m_depthImageView = VK_NULL_HANDLE;
 
-    // Framebuffer Resources
-    VkRenderPass m_renderPass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> m_framebuffers;
-
     // Command & Sync
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
@@ -79,4 +90,12 @@ private:
     VkSemaphore m_imageAvailableSemaphore = VK_NULL_HANDLE;
     VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence m_inFlightFence = VK_NULL_HANDLE;
+    bool m_framebufferResized = false;
+
+    entt::registry m_registry;
+
+    std::vector<std::function<void(entt::registry&)>> m_startupSystems;
+    std::vector<std::function<void(entt::registry&, UINT, WPARAM, LPARAM)>> m_inputSystems;
+    std::vector<std::function<void(entt::registry&)>> m_updateSystems;
+    std::vector<std::function<void(entt::registry&)>> m_renderSystems;
 };

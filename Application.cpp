@@ -4,6 +4,9 @@
 #include <vma/vk_mem_alloc.h>
 
 #include "Application.h"
+#include "Resource.h"
+#include "Component.h"
+#include "System.h"
 
 LPCWSTR CLASS_NAME = L"PointCloudViewer";
 
@@ -15,9 +18,9 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
     createRenderInstance();
     createRenderSurface(m_hInstance, m_hWnd);
     createRenderDevice();
-    
+
     VmaAllocatorCreateInfo allocatorInfo = {};
-    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
+    allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
     allocatorInfo.physicalDevice = m_physicalDevice;
     allocatorInfo.device = m_device;
     allocatorInfo.instance = m_instance;
@@ -27,10 +30,8 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
     createRenderSwapchain(width, height);
     createImageViews();
     createDepthResources();
-    createRenderPass();
-    createFramebuffers();
 
-    // 3. Execution Objects (New for Rendering)
+    // 3. Execution Objects
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
@@ -47,9 +48,6 @@ Application::~Application() {
         vkDestroyCommandPool(m_device, m_commandPool, NULL);
 
         // Render targets
-        for (auto fb : m_framebuffers) vkDestroyFramebuffer(m_device, fb, NULL);
-        vkDestroyRenderPass(m_device, m_renderPass, NULL);
-
         vkDestroyImageView(m_device, m_depthImageView, NULL);
         if (m_allocator != VK_NULL_HANDLE) {
             vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
@@ -69,6 +67,26 @@ Application::~Application() {
         vkDestroySurfaceKHR(m_instance, m_surface, NULL);
         vkDestroyInstance(m_instance, NULL);
     }
+}
+
+Application& Application::addStartupSystem(std::function<void(entt::registry&)> system) {
+    m_startupSystems.push_back(system);
+    return *this;
+}
+
+Application& Application::addInputSystem(std::function<void(entt::registry&, UINT, WPARAM, LPARAM)> system) {
+    m_inputSystems.push_back(system);
+    return *this;
+}
+
+Application& Application::addUpdateSystem(std::function<void(entt::registry&)> system) {
+    m_updateSystems.push_back(system);
+    return *this;
+}
+
+Application& Application::addRenderSystem(std::function<void(entt::registry&)> system) {
+    m_renderSystems.push_back(system);
+    return *this;
 }
 
 HWND Application::createWindow(
@@ -92,7 +110,7 @@ HWND Application::createWindow(
     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
     HWND hWnd = CreateWindowEx(
-        WS_EX_APPWINDOW,
+        WS_EX_APPWINDOW | WS_EX_ACCEPTFILES,
         className,
         title,
         WS_OVERLAPPEDWINDOW,
@@ -110,6 +128,8 @@ HWND Application::createWindow(
         throw std::runtime_error("Failed to create window.");
     }
 
+    DragAcceptFiles(hWnd, TRUE);
+
     return hWnd;
 }
 
@@ -121,7 +141,7 @@ void Application::createRenderInstance() {
 
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.apiVersion = VK_API_VERSION_1_3;
 
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -176,7 +196,8 @@ void Application::createRenderDevice() {
         }
     }
 
-    if (m_physicalDevice == VK_NULL_HANDLE) throw std::runtime_error("Failed to find suitable GPU!");
+    if (m_physicalDevice == VK_NULL_HANDLE)
+        throw std::runtime_error("Failed to find suitable GPU!");
 
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -185,10 +206,20 @@ void Application::createRenderDevice() {
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
+    VkPhysicalDeviceVulkan13Features features13 = {};
+    features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    features13.dynamicRendering = VK_TRUE;
+    features13.synchronization2 = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2 = {};
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.pNext = &features13;
+
     const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pNext = &deviceFeatures2;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.enabledExtensionCount = 1;
@@ -253,59 +284,6 @@ void Application::createImageViews() {
     }
 }
 
-void Application::createRenderPass() {
-    VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = m_swapchainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentDescription depthAttachment = {};
-    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colorRef = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-    VkAttachmentReference depthRef = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
-    subpass.pDepthStencilAttachment = &depthRef;
-
-    VkSubpassDependency dependency = {};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    VkAttachmentDescription attachments[] = { colorAttachment, depthAttachment };
-    VkRenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 2;
-    renderPassInfo.pAttachments = attachments;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    if (vkCreateRenderPass(m_device, &renderPassInfo, NULL, &m_renderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create render pass!");
-    }
-}
-
 void Application::createDepthResources() {
     VkImageCreateInfo imageInfo = {};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -340,26 +318,6 @@ void Application::createDepthResources() {
 
     if (vkCreateImageView(m_device, &viewInfo, NULL, &m_depthImageView) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create depth image view!");
-    }
-}
-
-void Application::createFramebuffers() {
-    m_framebuffers.resize(m_swapchainImageViews.size());
-    for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
-        VkImageView attachments[] = { m_swapchainImageViews[i], m_depthImageView };
-
-        VkFramebufferCreateInfo framebufferInfo = {};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = m_renderPass;
-        framebufferInfo.attachmentCount = 2;
-        framebufferInfo.pAttachments = attachments;
-        framebufferInfo.width = m_swapchainExtent.width;
-        framebufferInfo.height = m_swapchainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(m_device, &framebufferInfo, NULL, &m_framebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create framebuffer!");
-        }
     }
 }
 
@@ -403,45 +361,120 @@ void Application::createSyncObjects() {
     }
 }
 
-void Application::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void Application::recordCommandBuffer(
+    VkCommandBuffer commandBuffer, uint32_t imageIndex
+) {
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         throw std::runtime_error("Failed to begin recording command buffer!");
     }
 
-    VkRenderPassBeginInfo renderPassInfo = {};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_renderPass;
-    renderPassInfo.framebuffer = m_framebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = m_swapchainExtent;
+    // Barrier for Color Image (Transition to Color Attachment)
+    VkImageMemoryBarrier2 colorBarrier = {};
+    colorBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    colorBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    colorBarrier.srcAccessMask = 0;
+    colorBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    colorBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    colorBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorBarrier.image = m_swapchainImages[imageIndex];
+    colorBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    colorBarrier.subresourceRange.levelCount = 1;
+    colorBarrier.subresourceRange.layerCount = 1;
 
-    VkClearValue clearValues[2] = {};
-    // Gray Color (0.3, 0.3, 0.3)
-    clearValues[0].color = { {0.3f, 0.3f, 0.3f, 1.0f} };
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    // Barrier for Depth Image (Transition to Depth Attachment)
+    VkImageMemoryBarrier2 depthBarrier = {};
+    depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    depthBarrier.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+    depthBarrier.srcAccessMask = 0;
+    depthBarrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+    depthBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    depthBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthBarrier.image = m_depthImage;
+    depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depthBarrier.subresourceRange.levelCount = 1;
+    depthBarrier.subresourceRange.layerCount = 1;
 
-    renderPassInfo.clearValueCount = 2;
-    renderPassInfo.pClearValues = clearValues;
+    VkDependencyInfo dependencyInfo = {};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    VkImageMemoryBarrier2 barriers[] = { colorBarrier, depthBarrier };
+    dependencyInfo.imageMemoryBarrierCount = 2;
+    dependencyInfo.pImageMemoryBarriers = barriers;
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    // Draw calls would go here
-    vkCmdEndRenderPass(commandBuffer);
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+
+    VkRenderingAttachmentInfo colorAttachment = {};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = m_swapchainImageViews[imageIndex];
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color = { 0.3f, 0.3f, 0.3f, 1.0f };
+
+    VkRenderingAttachmentInfo depthAttachment = {};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = m_depthImageView;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
+
+    VkRenderingInfo renderingInfo = {};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.extent = m_swapchainExtent;
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = &depthAttachment;
+
+    vkCmdBeginRendering(commandBuffer, &renderingInfo);
+
+    // Update current command buffer in RenderContext
+    m_registry.ctx().get<RenderContext>().m_commandBuffer = commandBuffer;
+
+    for (auto& sys : m_renderSystems) {
+        sys(m_registry);
+    }
+
+    vkCmdEndRendering(commandBuffer);
+
+    // Transition color image to presentable layout
+    colorBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    colorBarrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    colorBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+    colorBarrier.dstAccessMask = 0;
+
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &colorBarrier;
+
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to record command buffer!");
+        throw std::runtime_error("Failed to end recording command buffer!");
     }
 }
 
 void Application::drawFrame() {
     vkWaitForFences(m_device, 1, &m_inFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(m_device, 1, &m_inFlightFence);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreateSwapchain();
+        return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        throw std::runtime_error("Failed to acquire swapchain image!");
+    }
+
+    vkResetFences(m_device, 1, &m_inFlightFence);
     vkResetCommandBuffer(m_commandBuffers[imageIndex], 0);
     recordCommandBuffer(m_commandBuffers[imageIndex], imageIndex);
 
@@ -474,22 +507,115 @@ void Application::drawFrame() {
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
 
-    vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+    result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_framebufferResized) {
+        m_framebufferResized = false;
+        recreateSwapchain();
+    } else if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to present swapchain image!");
+    }
+}
+
+void Application::recreateSwapchain() {
+    int width = 0, height = 0;
+    RECT rect;
+    if (GetClientRect(m_hWnd, &rect)) {
+        width = rect.right - rect.left;
+        height = rect.bottom - rect.top;
+    }
+    
+    while (width == 0 || height == 0) {
+        MSG msg;
+        if (GetMessage(&msg, NULL, 0, 0)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        if (GetClientRect(m_hWnd, &rect)) {
+            width = rect.right - rect.left;
+            height = rect.bottom - rect.top;
+        }
+    }
+
+    vkDeviceWaitIdle(m_device);
+
+    // Cleanup
+    vkDestroyImageView(m_device, m_depthImageView, NULL);
+    vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
+    for (auto view : m_swapchainImageViews) vkDestroyImageView(m_device, view, NULL);
+    vkDestroySwapchainKHR(m_device, m_swapchain, NULL);
+
+    // Recreate
+    createRenderSwapchain(width, height);
+    createImageViews();
+    createDepthResources();
+}
+
+void Application::initializeResources() {
+    m_registry.ctx().emplace<Time>(0.0f, 0.0f);
+    m_registry.ctx().emplace<RenderContext>(m_device, m_allocator, VK_NULL_HANDLE);
+
+    m_registry.on_destroy<Mesh>().connect<&onMeshDestroyed>();
+    m_registry.on_destroy<StandardMaterial>().connect<&onMaterialDestroyed>();
 }
 
 void Application::run() {
+    initializeResources();
+
+    for (auto& sys : m_startupSystems) {
+        sys(m_registry);
+    }
+
     ShowWindow(m_hWnd, SW_SHOW);
     UpdateWindow(m_hWnd);
+
+    auto lastTime = std::chrono::high_resolution_clock::now();
+
     MSG msg = {};
     while (msg.message != WM_QUIT) {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         } else {
+            using duration = std::chrono::duration<float, std::chrono::seconds::period>;
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            auto deltaTime = duration(currentTime - lastTime).count();
+            lastTime = currentTime;
+
+            auto& timeRes = m_registry.ctx().get<Time>();
+            timeRes.m_deltaTime = deltaTime;
+            timeRes.m_totalTime += deltaTime;
+
+            for (auto& sys : m_updateSystems) {
+                sys(m_registry);
+            }
+
             drawFrame();
         }
     }
+
     vkDeviceWaitIdle(m_device);
+}
+
+LRESULT Application::onHandleMessage(
+    HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
+) {
+    if (hWnd == m_hWnd) {
+        switch (uMsg) {
+            case WM_DESTROY:
+                PostQuitMessage(0);
+                break;
+            case WM_SIZE:
+                m_framebufferResized = true;
+                break;
+        }
+    }
+
+    for (auto& sys : m_inputSystems) {
+        sys(m_registry, uMsg, wParam, lParam);
+    }
+
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
 LRESULT Application::wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -499,9 +625,10 @@ LRESULT Application::wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pCreateStruct->lpCreateParams);
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
-    if (app && uMsg == WM_DESTROY) {
-        PostQuitMessage(0);
-        return 0;
+
+    if (app) {
+        return app->onHandleMessage(hWnd, uMsg, wParam, lParam);
     }
+
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }

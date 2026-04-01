@@ -5,6 +5,7 @@
       "pdal",
       "vulkan",
       "glm",
-      "vulkan-memory-allocator"
+      "vulkan-memory-allocator",
+      "entt"
     ]
 }
