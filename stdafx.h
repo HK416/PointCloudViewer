@@ -16,7 +16,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <entt/entt.hpp>
 
 #include <pdal/PointTable.hpp>
 #include <pdal/PointView.hpp>
@@ -30,3 +29,4 @@
 #include <stdexcept>
 #include <memory>
 #include <vector>
+#include <bitset>

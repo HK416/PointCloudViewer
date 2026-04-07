@@ -4,9 +4,6 @@
 #include <vma/vk_mem_alloc.h>
 
 #include "Application.h"
-#include "Resource.h"
-#include "Component.h"
-#include "System.h"
 
 LPCWSTR CLASS_NAME = L"PointCloudViewer";
 
@@ -35,6 +32,8 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
+
+    m_scene = std::make_unique<MainScene>(m_hWnd, m_device, m_allocator);
 }
 
 Application::~Application() {
@@ -46,6 +45,10 @@ Application::~Application() {
         vkDestroySemaphore(m_device, m_renderFinishedSemaphore, NULL);
         vkDestroySemaphore(m_device, m_imageAvailableSemaphore, NULL);
         vkDestroyCommandPool(m_device, m_commandPool, NULL);
+
+        if (m_scene) {
+            m_scene.reset();
+        }
 
         // Render targets
         vkDestroyImageView(m_device, m_depthImageView, NULL);
@@ -67,26 +70,6 @@ Application::~Application() {
         vkDestroySurfaceKHR(m_instance, m_surface, NULL);
         vkDestroyInstance(m_instance, NULL);
     }
-}
-
-Application& Application::addStartupSystem(std::function<void(entt::registry&)> system) {
-    m_startupSystems.push_back(system);
-    return *this;
-}
-
-Application& Application::addInputSystem(std::function<void(entt::registry&, UINT, WPARAM, LPARAM)> system) {
-    m_inputSystems.push_back(system);
-    return *this;
-}
-
-Application& Application::addUpdateSystem(std::function<void(entt::registry&)> system) {
-    m_updateSystems.push_back(system);
-    return *this;
-}
-
-Application& Application::addRenderSystem(std::function<void(entt::registry&)> system) {
-    m_renderSystems.push_back(system);
-    return *this;
 }
 
 HWND Application::createWindow(
@@ -434,11 +417,8 @@ void Application::recordCommandBuffer(
 
     vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
-    // Update current command buffer in RenderContext
-    m_registry.ctx().get<RenderContext>().m_commandBuffer = commandBuffer;
-
-    for (auto& sys : m_renderSystems) {
-        sys(m_registry);
+    if (m_scene) {
+        m_scene->onDraw(commandBuffer);
     }
 
     vkCmdEndRendering(commandBuffer);
@@ -549,23 +529,13 @@ void Application::recreateSwapchain() {
     createRenderSwapchain(width, height);
     createImageViews();
     createDepthResources();
-}
 
-void Application::initializeResources() {
-    m_registry.ctx().emplace<Time>(0.0f, 0.0f);
-    m_registry.ctx().emplace<RenderContext>(m_device, m_allocator, VK_NULL_HANDLE);
-
-    m_registry.on_destroy<Mesh>().connect<&onMeshDestroyed>();
-    m_registry.on_destroy<StandardMaterial>().connect<&onMaterialDestroyed>();
+    if (m_scene) {
+        m_scene->onResize(width, height);
+    }
 }
 
 void Application::run() {
-    initializeResources();
-
-    for (auto& sys : m_startupSystems) {
-        sys(m_registry);
-    }
-
     ShowWindow(m_hWnd, SW_SHOW);
     UpdateWindow(m_hWnd);
 
@@ -582,12 +552,8 @@ void Application::run() {
             auto deltaTime = duration(currentTime - lastTime).count();
             lastTime = currentTime;
 
-            auto& timeRes = m_registry.ctx().get<Time>();
-            timeRes.m_deltaTime = deltaTime;
-            timeRes.m_totalTime += deltaTime;
-
-            for (auto& sys : m_updateSystems) {
-                sys(m_registry);
+            if (m_scene) {
+                m_scene->onUpdate(deltaTime);
             }
 
             drawFrame();
@@ -611,8 +577,8 @@ LRESULT Application::onHandleMessage(
         }
     }
 
-    for (auto& sys : m_inputSystems) {
-        sys(m_registry, uMsg, wParam, lParam);
+    if (m_scene) {
+        m_scene->onHandleMessage(hWnd, uMsg, wParam, lParam);
     }
 
     return DefWindowProc(hWnd, uMsg, wParam, lParam);

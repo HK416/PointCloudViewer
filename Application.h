@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Scene.h"
+
 class Application {
 public:
     Application() = delete;
@@ -8,24 +10,8 @@ public:
     ~Application();
 
 public:
-    template<typename T> 
-    Application& insertResource() {
-        m_registry.ctx().emplace<T>();
-        return *this;
-    }
-
-    template<typename T, typename... Args>
-    Application& insertResource(Args&&... args) {
-        m_registry.ctx().emplace<T>(std::forward<Args>(args)...);
-        return *this;
-    }
-
-    Application& addStartupSystem(std::function<void(entt::registry&)> system);
-    Application& addInputSystem(std::function<void(entt::registry&, UINT, WPARAM, LPARAM)> system);
-    Application& addUpdateSystem(std::function<void(entt::registry&)> system);
-    Application& addRenderSystem(std::function<void(entt::registry&)> system);
-
-    void run();
+    void run(); 
+    
     LRESULT onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
     static LRESULT CALLBACK wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -53,7 +39,6 @@ private:
     void createSyncObjects();
     void drawFrame();
     void recreateSwapchain();
-    void initializeResources();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 private:
@@ -92,10 +77,5 @@ private:
     VkFence m_inFlightFence = VK_NULL_HANDLE;
     bool m_framebufferResized = false;
 
-    entt::registry m_registry;
-
-    std::vector<std::function<void(entt::registry&)>> m_startupSystems;
-    std::vector<std::function<void(entt::registry&, UINT, WPARAM, LPARAM)>> m_inputSystems;
-    std::vector<std::function<void(entt::registry&)>> m_updateSystems;
-    std::vector<std::function<void(entt::registry&)>> m_renderSystems;
+    std::unique_ptr<MainScene> m_scene;
 };
