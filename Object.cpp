@@ -12,13 +12,46 @@ PointCloudObject::PointCloudObject(
     pdal::LasReader reader;
     reader.setOptions(options);
 
-    pdal::PointTable table;
-    reader.prepare(table);
-    pdal::PointViewSet viewSet = reader.execute(table);
-    pdal::PointViewPtr pointView = *viewSet.begin();
-
-    uint32_t pointCount = (uint32_t)pointView->size();
+    pdal::QuickInfo info = reader.preview();
+    uint32_t pointCount = (uint32_t)info.m_pointCount;
     if (pointCount == 0) throw std::runtime_error("");
+    
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> colors;
+    positions.reserve(pointCount);
+    colors.reserve(pointCount);
+
+    glm::vec3 min(FLT_MAX), max(-FLT_MAX);
+    auto callback = [&](pdal::PointRef& point) -> bool {
+        glm::vec3 pos{0.0f}, color{1.0f};
+
+        pos.x = point.getFieldAs<float>(pdal::Dimension::Id::X);
+        pos.y = point.getFieldAs<float>(pdal::Dimension::Id::Y);
+        pos.z = point.getFieldAs<float>(pdal::Dimension::Id::Z);
+
+        min = glm::min(min, pos);
+        max = glm::max(max, pos);
+
+        positions.emplace_back(pos);
+
+        if (point.hasDim(pdal::Dimension::Id::Red)) {
+            color.r = point.getFieldAs<float>(pdal::Dimension::Id::Red) / 65535.0f;
+            color.g = point.getFieldAs<float>(pdal::Dimension::Id::Green) / 65535.0f;
+            color.b = point.getFieldAs<float>(pdal::Dimension::Id::Blue) / 65535.0f;
+        }
+        
+        colors.emplace_back(color);
+
+        return true;
+    };
+
+    pdal::StreamCallbackFilter filter;
+    filter.setCallback(callback);
+    filter.setInput(reader);
+
+    pdal::FixedPointTable table(10240);
+    filter.prepare(table);
+    filter.execute(table);
 
     m_allocator = allocator;
     m_vertexCount = pointCount;
@@ -34,19 +67,6 @@ PointCloudObject::PointCloudObject(
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-    // Positions
-    std::vector<glm::vec3> positions(pointCount);
-    glm::vec3 min(FLT_MAX), max(-FLT_MAX);
-
-    for (pdal::PointId i = 0; i < pointCount; ++i) {
-        positions[i].x = pointView->getFieldAs<float>(pdal::Dimension::Id::X, i);
-        positions[i].y = pointView->getFieldAs<float>(pdal::Dimension::Id::Y, i);
-        positions[i].z = pointView->getFieldAs<float>(pdal::Dimension::Id::Z, i);
-
-        min = glm::min(min, positions[i]);
-        max = glm::max(max, positions[i]);
-    }
-
     glm::vec3 center = (min + max) * 0.5f;
     for (auto& p : positions) {
         p -= center;
@@ -57,16 +77,6 @@ PointCloudObject::PointCloudObject(
     vmaMapMemory(allocator, m_positionAllocation, &data);
     memcpy(data, positions.data(), posSize);
     vmaUnmapMemory(allocator, m_positionAllocation);
-
-    // Colors (Optional, LAS might have 16-bit colors)
-    std::vector<glm::vec3> colors(pointCount, glm::vec3(1.0f));
-    if (pointView->hasDim(pdal::Dimension::Id::Red)) {
-        for (pdal::PointId i = 0; i < pointCount; ++i) {
-            colors[i].r = pointView->getFieldAs<float>(pdal::Dimension::Id::Red, i) / 65535.0f;
-            colors[i].g = pointView->getFieldAs<float>(pdal::Dimension::Id::Green, i) / 65535.0f;
-            colors[i].b = pointView->getFieldAs<float>(pdal::Dimension::Id::Blue, i) / 65535.0f;
-        }
-    }
 
     bufferInfo.size = colorSize;
     vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &m_colorBuffer, &m_colorAllocation, nullptr);

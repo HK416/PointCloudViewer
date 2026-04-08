@@ -19,8 +19,10 @@
 
 #include <pdal/PointTable.hpp>
 #include <pdal/PointView.hpp>
+#include <pdal/filters/StreamCallbackFilter.hpp>
 #include <pdal/io/LasReader.hpp>
 #include <pdal/Options.hpp>
+#include <pdal/QuickInfo.hpp>
 
 #include <chrono>
 #include <fstream>
