@@ -1,10 +1,18 @@
 #include "stdafx.h"
 #include "Scene.h"
 
-MainScene::MainScene(HWND hWnd, VkDevice device, VmaAllocator allocator) {
+MainScene::MainScene(
+    HWND hWnd,
+    VkDevice device,
+    VkQueue graphicsQueue,
+    VmaAllocator allocator,
+    VkCommandPool commandPool
+) {
     m_hWnd = hWnd;
     m_device = device;
+    m_graphicsQueue = graphicsQueue;
     m_allocator = allocator;
+    m_commandPool = commandPool;
 
     RECT rect;
     if (GetClientRect(hWnd, &rect)) {
@@ -95,19 +103,19 @@ void MainScene::buildPipeline(VkDevice device) {
 
     // Pipeline State
     VkVertexInputBindingDescription bindings[] = {
-        {0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}, // Pos
-        {1, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX}  // Color
+        {0, sizeof(PointCloudVertex), VK_VERTEX_INPUT_RATE_VERTEX}, // Point Cloud Vertex
     };
     VkVertexInputAttributeDescription attributes[] = {
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-        {1, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PointCloudVertex, position)},
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PointCloudVertex, color)},
+        {2, 0, VK_FORMAT_R32_SFLOAT, offsetof(PointCloudVertex, intensity)}
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 2;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = bindings;
-    vertexInputInfo.vertexAttributeDescriptionCount = 2;
+    vertexInputInfo.vertexAttributeDescriptionCount = 3;
     vertexInputInfo.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
@@ -249,11 +257,9 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
 
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
 
-        auto vertexBuffers = m_pointCloud->getBuffers();
-        VkDeviceSize offsets[] = {0, 0};
-        vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers.data(), offsets);
-
-        vkCmdDraw(commandBuffer, m_pointCloud->getVertexCount(), 1, 0, 0);
+        const auto& mesh = m_pointCloud->getMesh();
+        mesh->bind(commandBuffer);
+        mesh->draw(commandBuffer);
     }
 }
 
@@ -302,7 +308,36 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         if (fileCount > 0) {
             WCHAR szPath[MAX_PATH];
             if (DragQueryFile(hDrop, 0, szPath, MAX_PATH)) {
-                m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator);
+                VkCommandBufferAllocateInfo allocInfo = {};
+                allocInfo.sType =
+                    VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+                allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                allocInfo.commandPool = m_commandPool;
+                allocInfo.commandBufferCount = 1;
+
+                VkCommandBuffer commandBuffer;
+                vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+
+                VkCommandBufferBeginInfo beginInfo = {};
+                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+                m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator, commandBuffer);
+
+                vkEndCommandBuffer(commandBuffer);
+
+                VkSubmitInfo submitInfo = {};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &commandBuffer;
+
+                vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+                vkQueueWaitIdle(m_graphicsQueue);
+
+                vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+                m_pointCloud->getMesh()->releaseStagingBuffers();
             }
         }
         DragFinish(hDrop);

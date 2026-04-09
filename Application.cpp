@@ -33,7 +33,9 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
     createCommandBuffers();
     createSyncObjects();
 
-    m_scene = std::make_unique<MainScene>(m_hWnd, m_device, m_allocator);
+    m_scene = std::make_unique<MainScene>(
+        m_hWnd, m_device, m_graphicsQueue, m_allocator, m_commandPool
+    );
 }
 
 Application::~Application() {

@@ -18,7 +18,13 @@ class MainScene : public Scene {
 public:
     MainScene() = delete;
     MainScene(const MainScene&) = delete;
-    MainScene(HWND hWnd, VkDevice device, VmaAllocator allocator);
+    MainScene(
+        HWND hWnd,
+        VkDevice device,
+        VkQueue graphicsQueue,
+        VmaAllocator allocator,
+        VkCommandPool commandPool
+    );
     virtual ~MainScene();
 
 private:
@@ -36,7 +42,9 @@ public:
 private:
     HWND m_hWnd;
     VkDevice m_device;
+    VkQueue m_graphicsQueue;
     VmaAllocator m_allocator;
+    VkCommandPool m_commandPool;
 
     std::bitset<256> m_keys;
     glm::vec2 m_lastMousePos{0.0f};

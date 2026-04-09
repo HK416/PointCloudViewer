@@ -1,4 +1,5 @@
 #pragma once
+#include "Mesh.h"
 
 class Object {
 public:
@@ -26,25 +27,13 @@ public:
 };
 
 class PointCloudObject : public Object {
-private:
-
 public:
     PointCloudObject() = delete;
     PointCloudObject(const PointCloudObject&) = delete;
-    PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator);
-    virtual ~PointCloudObject();
+    PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, VkCommandBuffer commandBuffer);
 
-    int getVertexCount() const;
-    std::vector<VkBuffer> getBuffers() const;
+    const std::unique_ptr<PointCloudMesh>& getMesh() const;
 
 protected:
-    VmaAllocator m_allocator;
-
-    int m_vertexCount = 0;
-
-    VkBuffer m_positionBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_positionAllocation = VK_NULL_HANDLE;
-
-    VkBuffer m_colorBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_colorAllocation = VK_NULL_HANDLE;
+    std::unique_ptr<PointCloudMesh> m_mesh = nullptr;
 };

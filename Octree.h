@@ -1,10 +1,5 @@
 #pragma once
-
-struct CloudPoint {
-    glm::vec3 position;
-    glm::vec3 color;
-    float intensity;
-};
+#include "Mesh.h"
 
 struct Bound3D {
     glm::vec3 min;
@@ -30,7 +25,7 @@ struct _Node {
     size_t level;
     Bound3D bound;
     std::vector<_Node> children;
-    std::vector<CloudPoint> data;
+    std::vector<PointCloudVertex> data;
 };
 
 class Octree {
