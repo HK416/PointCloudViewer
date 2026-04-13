@@ -3,7 +3,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="PointCloudViewer.vcxproj" Id="609c60b4-5829-423a-91ec-311d980629aa">
+  <Project Path="src\PointCloudViewer.vcxproj" Id="609c60b4-5829-423a-91ec-311d980629aa">
     <Build Solution="*|x86" Project="false" />
   </Project>
 </Solution>
