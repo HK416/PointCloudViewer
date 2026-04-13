@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Object.h"
+#include "TransferManager.h"
 
 class Scene {
 public:
@@ -23,7 +24,8 @@ public:
         VkDevice device,
         VkQueue graphicsQueue,
         VmaAllocator allocator,
-        VkCommandPool commandPool
+        VkCommandPool commandPool,
+        TransferManager* transferMgr
     );
     virtual ~MainScene();
 
@@ -45,6 +47,7 @@ private:
     VkQueue m_graphicsQueue;
     VmaAllocator m_allocator;
     VkCommandPool m_commandPool;
+    TransferManager* m_transferMgr;
 
     std::bitset<256> m_keys;
     glm::vec2 m_lastMousePos{0.0f};

@@ -33,8 +33,13 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
     createCommandBuffers();
     createSyncObjects();
 
+    // 4. Transfer Manager
+    m_transferManager = std::make_unique<TransferManager>(
+        m_device, m_graphicsQueueFamilyIndex, m_graphicsQueue
+    );
+
     m_scene = std::make_unique<MainScene>(
-        m_hWnd, m_device, m_graphicsQueue, m_allocator, m_commandPool
+        m_hWnd, m_device, m_graphicsQueue, m_allocator, m_commandPool, m_transferManager.get()
     );
 }
 
@@ -50,6 +55,10 @@ Application::~Application() {
 
         if (m_scene) {
             m_scene.reset();
+        }
+
+        if (m_transferManager) {
+            m_transferManager.reset();
         }
 
         // Render targets

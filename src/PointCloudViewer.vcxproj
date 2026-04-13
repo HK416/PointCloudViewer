@@ -17,6 +17,7 @@
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Octree.cpp" />
     <ClCompile Include="Scene.cpp" />
+    <ClCompile Include="TransferManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
@@ -25,6 +26,7 @@
     <ClInclude Include="Octree.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="TransferManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="frag.glsl" />

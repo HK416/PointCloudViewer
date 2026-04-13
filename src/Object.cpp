@@ -5,7 +5,7 @@ PointCloudObject::PointCloudObject(
     LPCWSTR filepath,
     VkDevice device,
     VmaAllocator allocator,
-    VkCommandBuffer commandBuffer
+    TransferManager* transferMgr
 ) {
     std::string path((char*)CW2A(filepath));
 
@@ -61,7 +61,7 @@ PointCloudObject::PointCloudObject(
     }
 
     m_mesh = std::make_unique<PointCloudMesh>(
-        device, allocator, commandBuffer, vertices
+        device, allocator, transferMgr, vertices
     );
 }
 

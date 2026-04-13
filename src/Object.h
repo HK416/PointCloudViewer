@@ -3,6 +3,8 @@
 #include "Mesh.h"
 #include "Octree.h"
 
+class TransferManager;
+
 class Object {
 public:
     virtual ~Object() { }
@@ -32,7 +34,7 @@ class PointCloudObject : public Object {
 public:
     PointCloudObject() = delete;
     PointCloudObject(const PointCloudObject&) = delete;
-    PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, VkCommandBuffer commandBuffer);
+    PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, TransferManager* transferMgr);
 
     const std::unique_ptr<PointCloudMesh>& getMesh() const;
     const std::unique_ptr<Octree>& getHierarchy() const;

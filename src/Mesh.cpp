@@ -4,19 +4,19 @@
 PointCloudMesh::PointCloudMesh(
     VkDevice device,
     VmaAllocator allocator,
-    VkCommandBuffer commandBuffer,
+    TransferManager* transferMgr,
     const std::vector<PointCloudVertex>& vertices
 ) {
     if (vertices.empty())
         throw std::runtime_error("The given vertex data is empty!");
 
+    m_device = device;
     m_allocator = allocator;
-    m_vertexCount = vertices.size();
+    m_vertexCount = static_cast<uint32_t>(vertices.size());
 
     createBuffer(
-        device,
-        allocator,
-        commandBuffer,
+        m_allocator,
+        transferMgr,
         m_vertexBuffer,
         m_vertexAllocation,
         m_stagingBuffer,
@@ -37,9 +37,8 @@ PointCloudMesh::~PointCloudMesh() {
 }
 
 void PointCloudMesh::createBuffer(
-    VkDevice device,
     VmaAllocator allocator,
-    VkCommandBuffer commandBuffer,
+    TransferManager* transferMgr,
     VkBuffer& buffer,
     VmaAllocation& allocation,
     VkBuffer& stagingBuffer,
@@ -87,27 +86,32 @@ void PointCloudMesh::createBuffer(
         vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
     }
 
-    // 3. Copy Staging to GPU Only
-    {
-        VkBufferCopy copyRegion = {};
-        copyRegion.size = bufferSize;
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, buffer, 1, &copyRegion);
-    }
+    // 3. Delegate Copy to TransferManager
+    m_transferId = transferMgr->requestTransfer(stagingBuffer, buffer, bufferSize);
 }
 
-void PointCloudMesh::releaseStagingBuffers() {
-    if (m_stagingBuffer) {
-        vmaDestroyBuffer(m_allocator, m_stagingBuffer, m_stagingAllocation);
-        m_stagingBuffer = VK_NULL_HANDLE;
-        m_stagingAllocation = VK_NULL_HANDLE;
+void PointCloudMesh::updateStatus(TransferManager* transferMgr) {
+    if (!m_ready && m_transferId > 0) {
+        if (transferMgr->isFinished(m_transferId)) {
+            if (m_stagingBuffer) {
+                vmaDestroyBuffer(m_allocator, m_stagingBuffer, m_stagingAllocation);
+                m_stagingBuffer = VK_NULL_HANDLE;
+                m_stagingAllocation = VK_NULL_HANDLE;
+            }
+            m_ready = true;
+        }
     }
 }
 
 void PointCloudMesh::bind(VkCommandBuffer commandBuffer) const {
-    VkDeviceSize offset{0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer, &offset);
+    if (m_ready) {
+        VkDeviceSize offset{0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertexBuffer, &offset);
+    }
 }
 
 void PointCloudMesh::draw(VkCommandBuffer commandBuffer) const {
-    vkCmdDraw(commandBuffer, m_vertexCount, 1, 0, 0);
+    if (m_ready) {
+        vkCmdDraw(commandBuffer, m_vertexCount, 1, 0, 0);
+    }
 }

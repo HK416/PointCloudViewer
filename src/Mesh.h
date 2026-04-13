@@ -1,13 +1,17 @@
 #pragma once
 
+#include "TransferManager.h"
+
 class Mesh {
 public:
     virtual ~Mesh() {}
 
-    virtual void releaseStagingBuffers() = 0;
+    virtual void updateStatus(TransferManager* transferMgr) = 0;
 
     virtual void bind(VkCommandBuffer) const = 0;
     virtual void draw(VkCommandBuffer) const = 0;
+
+    virtual bool isReady() const = 0;
 };
 
 struct PointCloudVertex {
@@ -23,16 +27,15 @@ public:
     PointCloudMesh(
         VkDevice device,
         VmaAllocator allocator,
-        VkCommandBuffer commandBuffer,
+        TransferManager* transferMgr,
         const std::vector<PointCloudVertex>& vertices
     );
     virtual ~PointCloudMesh();
 
 private:
     void createBuffer(
-        VkDevice device,
         VmaAllocator allocator,
-        VkCommandBuffer commandBuffer,
+        TransferManager* transferMgr,
         VkBuffer& buffer,
         VmaAllocation& allocation,
         VkBuffer& stagingBuffer,
@@ -42,13 +45,19 @@ private:
     );
 
 public:
-    virtual void releaseStagingBuffers() override;
+    virtual void updateStatus(TransferManager* transferMgr) override;
 
     virtual void bind(VkCommandBuffer commandBuffer) const override;
     virtual void draw(VkCommandBuffer commandBuffer) const override;
 
+    virtual bool isReady() const override { return m_ready; }
+
 protected:
+    bool m_ready = false;
     uint32_t m_vertexCount = 0;
+    uint64_t m_transferId = 0;
+
+    VkDevice m_device = VK_NULL_HANDLE;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
 
     VkBuffer m_stagingBuffer = VK_NULL_HANDLE;

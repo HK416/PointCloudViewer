@@ -6,20 +6,22 @@ MainScene::MainScene(
     VkDevice device,
     VkQueue graphicsQueue,
     VmaAllocator allocator,
-    VkCommandPool commandPool
+    VkCommandPool commandPool,
+    TransferManager* transferMgr
 ) {
     m_hWnd = hWnd;
     m_device = device;
     m_graphicsQueue = graphicsQueue;
     m_allocator = allocator;
     m_commandPool = commandPool;
+    m_transferMgr = transferMgr;
 
     RECT rect;
     if (GetClientRect(hWnd, &rect)) {
         m_viewport.x = 0.0f;
         m_viewport.y = 0.0f;
-        m_viewport.width = rect.right - rect.left;
-        m_viewport.height = rect.bottom - rect.top;
+        m_viewport.width = static_cast<float>(rect.right - rect.left);
+        m_viewport.height = static_cast<float>(rect.bottom - rect.top);
         m_viewport.minDepth = 0.0f;
         m_viewport.maxDepth = 1.0f;
 
@@ -226,6 +228,10 @@ void MainScene::onUpdate(float elapsedTimeSec) {
         m_camera.m_position += up * speed;
     if (m_keys['Q'])
         m_camera.m_position -= up * speed;
+
+    // Update Mesh Status (Async Loading Check)
+    if (m_pointCloud)
+        m_pointCloud->getMesh()->updateStatus(m_transferMgr);
 }
 
 void MainScene::onDraw(VkCommandBuffer commandBuffer) {
@@ -240,7 +246,6 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
     }
 
     if (m_pointCloud) {
-
         // Push Constants for Matrices
         glm::mat4 model = glm::translate(glm::mat4(1.0f), m_pointCloud->m_position) *
                           glm::mat4_cast(m_pointCloud->m_rotation) *
@@ -287,7 +292,7 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         break;
     case WM_RBUTTONDOWN:
         m_rightMouseDown = true;
-        SetCapture(WindowFromDC(GetDC(NULL)));
+        SetCapture(hWnd);
         break;
     case WM_RBUTTONUP:
         m_rightMouseDown = false;
@@ -308,36 +313,8 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         if (fileCount > 0) {
             WCHAR szPath[MAX_PATH];
             if (DragQueryFile(hDrop, 0, szPath, MAX_PATH)) {
-                VkCommandBufferAllocateInfo allocInfo = {};
-                allocInfo.sType =
-                    VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-                allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-                allocInfo.commandPool = m_commandPool;
-                allocInfo.commandBufferCount = 1;
-
-                VkCommandBuffer commandBuffer;
-                vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
-
-                VkCommandBufferBeginInfo beginInfo = {};
-                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-                vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-                m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator, commandBuffer);
-
-                vkEndCommandBuffer(commandBuffer);
-
-                VkSubmitInfo submitInfo = {};
-                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-                submitInfo.commandBufferCount = 1;
-                submitInfo.pCommandBuffers = &commandBuffer;
-
-                vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-                vkQueueWaitIdle(m_graphicsQueue);
-
-                vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
-                m_pointCloud->getMesh()->releaseStagingBuffers();
+                // Async Load
+                m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator, m_transferMgr);
             }
         }
         DragFinish(hDrop);
