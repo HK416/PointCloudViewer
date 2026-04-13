@@ -18,21 +18,21 @@ PointCloudObject::PointCloudObject(
     pdal::QuickInfo info = reader.preview();
     uint32_t pointCount = (uint32_t)info.m_pointCount;
     if (pointCount == 0)
-        throw std::runtime_error("");
+        throw std::runtime_error("the Point Cloud data is empty!");
+
+    glm::vec3 min{info.m_bounds.minx, info.m_bounds.miny, info.m_bounds.minz};
+    glm::vec3 max{info.m_bounds.maxx, info.m_bounds.maxy, info.m_bounds.maxz};
+    m_octree = std::make_unique<Octree>(Bound3D{min, max});
 
     std::vector<PointCloudVertex> vertices;
     vertices.reserve(pointCount);
 
-    glm::vec3 min(FLT_MAX), max(-FLT_MAX);
     auto callback = [&](pdal::PointRef& point) -> bool {
         glm::vec3 pos{0.0f}, color{1.0f};
 
         pos.x = point.getFieldAs<float>(pdal::Dimension::Id::X);
         pos.y = point.getFieldAs<float>(pdal::Dimension::Id::Y);
         pos.z = point.getFieldAs<float>(pdal::Dimension::Id::Z);
-
-        min = glm::min(min, pos);
-        max = glm::max(max, pos);
 
         if (point.hasDim(pdal::Dimension::Id::Red)) {
             color.r = point.getFieldAs<float>(pdal::Dimension::Id::Red) / 65535.0f;
@@ -41,6 +41,7 @@ PointCloudObject::PointCloudObject(
         }
 
         vertices.emplace_back(pos, color, 0.0f);
+        m_octree->insert({pos, color, 0.0f});
 
         return true;
     };
@@ -52,6 +53,7 @@ PointCloudObject::PointCloudObject(
     pdal::FixedPointTable table(10240);
     filter.prepare(table);
     filter.execute(table);
+    m_octree->flushRemainingToDisk();
 
     glm::vec3 center = (min + max) * 0.5f;
     for (auto& v : vertices) {
@@ -65,4 +67,8 @@ PointCloudObject::PointCloudObject(
 
 const std::unique_ptr<PointCloudMesh>& PointCloudObject::getMesh() const {
     return m_mesh;
+}
+
+const std::unique_ptr<Octree>& PointCloudObject::getHierarchy() const {
+    return m_octree;
 }

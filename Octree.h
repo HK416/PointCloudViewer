@@ -6,26 +6,56 @@ struct Bound3D {
     glm::vec3 max;
 
     glm::vec3 getCenter() const;
-    bool contains(const glm::vec3& point) const;
+    glm::vec3 getSize() const;
 };
 
-enum class Dimension : size_t {
-    PxPyPz, // 0b000
-    PxPyNz, // 0b001
-    PxNyPz, // 0b010
-    PxNyNz, // 0b011
-    NxPyPz, // 0b100
-    NxPyNz, // 0b101
-    NxNyPz, // 0b110
-    NxNyNz, // 0b111
-    MaxEnum,
+struct ChunkSpan {
+    size_t offsetBytes = 0;
+    size_t pointCount = 0;
 };
 
-struct _Node {
-    size_t level;
-    Bound3D bound;
-    std::vector<_Node> children;
-    std::vector<PointCloudVertex> data;
+class PointCloudFileManager {
+public:
+    PointCloudFileManager() = delete;
+    PointCloudFileManager(const PointCloudFileManager&) = delete; 
+    PointCloudFileManager(const std::string& filename);
+    ~PointCloudFileManager();
+
+    ChunkSpan writeData(const std::vector<PointCloudVertex>& points);
+
+private:
+    std::ofstream m_dataFile;
+    size_t m_currentWriteOffset = 0;
+};
+
+class OctreeNode {
+public:
+    OctreeNode() = delete;
+    OctreeNode(const OctreeNode&) = delete;
+    OctreeNode(Bound3D bound, PointCloudFileManager& fm);
+
+    void insert(const PointCloudVertex& p);
+    void flushRemainingToDisk();
+    ChunkSpan getChunkData() const;
+
+private:
+    int getOctantIndex(const glm::vec3& position) const;
+    void createChild(int index);
+    void flushLODToDisk(const std::vector<PointCloudVertex>& lodPoints);
+    void insertIntoChild(const PointCloudVertex& p);
+    void splitAndPushDown();
+
+private:
+    bool m_leafNode = true;
+    ChunkSpan m_chunkSpan;
+    Bound3D m_bound;
+    std::unique_ptr<OctreeNode> m_children[8];
+    std::vector<PointCloudVertex> m_points;
+    PointCloudFileManager& m_fileManager;
+
+public:
+    static const int MAX_CAPACITY = 65536;
+    static const int GRID_RES = 32;
 };
 
 class Octree {
@@ -33,12 +63,12 @@ public:
     Octree() = delete;
     Octree(const Octree&) = delete;
     Octree(Bound3D bound);
-    Octree(Bound3D bound, size_t maxLevel);
-    Octree(Bound3D bound, size_t maxLevel, size_t capacity);
+
+public:
+    void insert(const PointCloudVertex& p);
+    void flushRemainingToDisk();
 
 private:
-    void setupTree(_Node& n, Bound3D bound, size_t maxLevel, size_t level, size_t capacity);
-
-private:
-    _Node m_root;
+    PointCloudFileManager m_fileManager;
+    std::unique_ptr<OctreeNode> m_root;
 };

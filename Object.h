@@ -1,5 +1,7 @@
 #pragma once
+
 #include "Mesh.h"
+#include "Octree.h"
 
 class Object {
 public:
@@ -33,7 +35,9 @@ public:
     PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, VkCommandBuffer commandBuffer);
 
     const std::unique_ptr<PointCloudMesh>& getMesh() const;
+    const std::unique_ptr<Octree>& getHierarchy() const;
 
 protected:
+    std::unique_ptr<Octree> m_octree = nullptr;
     std::unique_ptr<PointCloudMesh> m_mesh = nullptr;
 };
