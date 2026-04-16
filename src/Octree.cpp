@@ -9,7 +9,7 @@ glm::vec3 Bound3D::getSize() const {
     return max - min;
 }
 
-OctreeNode::OctreeNode(Bound3D bound, PointCloudFileManager& fm) : m_fileManager(fm) {
+OctreeNode::OctreeNode(Bound3D bound, PointCloudFileManager* fileManager) : m_fileManager(fileManager) {
     m_bound = bound;
     m_points.reserve(MAX_CAPACITY);
 }
@@ -29,7 +29,7 @@ void OctreeNode::insert(const PointCloudVertex& p) {
 
 void OctreeNode::flushRemainingToDisk() {
     if (m_leafNode && !m_points.empty()) {
-        m_chunkSpan = m_fileManager.writeData(m_points);
+        m_chunkSpan = m_fileManager->writeData(m_points);
         m_points.clear();
         m_points.shrink_to_fit();
     }
@@ -89,7 +89,7 @@ void OctreeNode::flushLODToDisk(const std::vector<PointCloudVertex>& lodPoints) 
     if (lodPoints.empty())
         return;
 
-    m_chunkSpan = m_fileManager.writeData(lodPoints);
+    m_chunkSpan = m_fileManager->writeData(lodPoints);
 }
 
 void OctreeNode::insertIntoChild(const PointCloudVertex& p) {
@@ -138,36 +138,8 @@ void OctreeNode::splitAndPushDown() {
     }
 }
 
-PointCloudFileManager::PointCloudFileManager(const std::string& filename) {
-    m_dataFile.open(filename, std::ios::binary | std::ios::app);
-    if (!m_dataFile.is_open()) {
-        throw std::runtime_error("Cannot open data file!");
-    }
-    
-    m_dataFile.seekp(0, std::ios::end);
-    m_currentWriteOffset = m_dataFile.tellp();
-}
-
-PointCloudFileManager::~PointCloudFileManager() {
-    if (m_dataFile.is_open())
-        m_dataFile.close();
-}
-
-ChunkSpan PointCloudFileManager::writeData(const std::vector<PointCloudVertex>& points) {
-    if (!m_dataFile.is_open() || points.empty())
-        return {0, 0};
-
-    size_t sizeInBytes = points.size() * sizeof(PointCloudVertex);
-    ChunkSpan span{m_currentWriteOffset, points.size()};
-
-    m_dataFile.write(reinterpret_cast<const char*>(points.data()), sizeInBytes);
-    m_dataFile.flush();
-
-    m_currentWriteOffset += sizeInBytes;
-    return span;
-}
-
-Octree::Octree(Bound3D bound) : m_fileManager(std::format("temp.bin")) {
+Octree::Octree(PointCloudFileManager* fileManager, Bound3D bound)
+    : m_fileManager(fileManager) {
     m_root = std::make_unique<OctreeNode>(bound, m_fileManager);
 }
 

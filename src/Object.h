@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Mesh.h"
-#include "Octree.h"
-
+class Octree;
 class TransferManager;
+class PointCloudFileManager;
+class PointCloudBufferManager;
 
 class Object {
 public:
@@ -36,10 +36,12 @@ public:
     PointCloudObject(const PointCloudObject&) = delete;
     PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, TransferManager* transferMgr);
 
-    const std::unique_ptr<PointCloudMesh>& getMesh() const;
-    const std::unique_ptr<Octree>& getHierarchy() const;
+public:
+    void updateBufferState(TransferManager* transferManager);
+    void draw(VkCommandBuffer commandBuffer) const;
 
 protected:
     std::unique_ptr<Octree> m_octree = nullptr;
-    std::unique_ptr<PointCloudMesh> m_mesh = nullptr;
+    std::unique_ptr<PointCloudFileManager> m_fileManager = nullptr;
+    std::unique_ptr<PointCloudBufferManager> m_bufferManager = nullptr;
 };

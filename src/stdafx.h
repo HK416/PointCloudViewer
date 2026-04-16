@@ -32,3 +32,4 @@
 #include <memory>
 #include <vector>
 #include <bitset>
+#include <list>

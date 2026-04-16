@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Scene.h"
+#include "Buffer.h"
 
 MainScene::MainScene(
     HWND hWnd,
@@ -231,7 +232,7 @@ void MainScene::onUpdate(float elapsedTimeSec) {
 
     // Update Mesh Status (Async Loading Check)
     if (m_pointCloud)
-        m_pointCloud->getMesh()->updateStatus(m_transferMgr);
+        m_pointCloud->updateBufferState(m_transferMgr);
 }
 
 void MainScene::onDraw(VkCommandBuffer commandBuffer) {
@@ -262,9 +263,7 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
 
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
 
-        const auto& mesh = m_pointCloud->getMesh();
-        mesh->bind(commandBuffer);
-        mesh->draw(commandBuffer);
+        m_pointCloud->draw(commandBuffer);
     }
 }
 

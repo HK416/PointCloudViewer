@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "Object.h"
+#include "Buffer.h"
+#include "Octree.h"
 
 PointCloudObject::PointCloudObject(
     LPCWSTR filepath,
@@ -20,12 +22,12 @@ PointCloudObject::PointCloudObject(
     if (pointCount == 0)
         throw std::runtime_error("the Point Cloud data is empty!");
 
+    m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr);
+    m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", path));
     glm::vec3 min{info.m_bounds.minx, info.m_bounds.miny, info.m_bounds.minz};
     glm::vec3 max{info.m_bounds.maxx, info.m_bounds.maxy, info.m_bounds.maxz};
-    m_octree = std::make_unique<Octree>(Bound3D{min, max});
-
-    std::vector<PointCloudVertex> vertices;
-    vertices.reserve(pointCount);
+    Bound3D bound{min, max};
+    m_octree = std::make_unique<Octree>(m_fileManager.get(), bound);
 
     auto callback = [&](pdal::PointRef& point) -> bool {
         glm::vec3 pos{0.0f}, color{1.0f};
@@ -40,7 +42,6 @@ PointCloudObject::PointCloudObject(
             color.b = point.getFieldAs<float>(pdal::Dimension::Id::Blue) / 65535.0f;
         }
 
-        vertices.emplace_back(pos, color, 0.0f);
         m_octree->insert({pos, color, 0.0f});
 
         return true;
@@ -54,21 +55,14 @@ PointCloudObject::PointCloudObject(
     filter.prepare(table);
     filter.execute(table);
     m_octree->flushRemainingToDisk();
+}
 
-    glm::vec3 center = (min + max) * 0.5f;
-    for (auto& v : vertices) {
-        v.position -= center;
+void PointCloudObject::updateBufferState(TransferManager* transferManager) {
+    if (m_bufferManager) {
+        
     }
-
-    m_mesh = std::make_unique<PointCloudMesh>(
-        device, allocator, transferMgr, vertices
-    );
 }
 
-const std::unique_ptr<PointCloudMesh>& PointCloudObject::getMesh() const {
-    return m_mesh;
-}
+void PointCloudObject::draw(VkCommandBuffer commandBuffer) const {
 
-const std::unique_ptr<Octree>& PointCloudObject::getHierarchy() const {
-    return m_octree;
 }

@@ -1,5 +1,6 @@
 #pragma once
-#include "Mesh.h"
+#include "Buffer.h"
+#include "FileManager.h"
 
 struct Bound3D {
     glm::vec3 min;
@@ -9,30 +10,11 @@ struct Bound3D {
     glm::vec3 getSize() const;
 };
 
-struct ChunkSpan {
-    size_t offsetBytes = 0;
-    size_t pointCount = 0;
-};
-
-class PointCloudFileManager {
-public:
-    PointCloudFileManager() = delete;
-    PointCloudFileManager(const PointCloudFileManager&) = delete; 
-    PointCloudFileManager(const std::string& filename);
-    ~PointCloudFileManager();
-
-    ChunkSpan writeData(const std::vector<PointCloudVertex>& points);
-
-private:
-    std::ofstream m_dataFile;
-    size_t m_currentWriteOffset = 0;
-};
-
 class OctreeNode {
 public:
     OctreeNode() = delete;
     OctreeNode(const OctreeNode&) = delete;
-    OctreeNode(Bound3D bound, PointCloudFileManager& fm);
+    OctreeNode(Bound3D bound, PointCloudFileManager* fileManager);
 
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
@@ -51,7 +33,7 @@ private:
     Bound3D m_bound;
     std::unique_ptr<OctreeNode> m_children[8];
     std::vector<PointCloudVertex> m_points;
-    PointCloudFileManager& m_fileManager;
+    PointCloudFileManager* m_fileManager;
 
 public:
     static const int MAX_CAPACITY = 65536;
@@ -62,13 +44,13 @@ class Octree {
 public:
     Octree() = delete;
     Octree(const Octree&) = delete;
-    Octree(Bound3D bound);
+    Octree(PointCloudFileManager* fileManager, Bound3D bound);
 
 public:
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
 
 private:
-    PointCloudFileManager m_fileManager;
+    PointCloudFileManager* m_fileManager;
     std::unique_ptr<OctreeNode> m_root;
 };
