@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Octree.h"
+#include "Frustum.h"
 
 glm::vec3 Bound3D::getCenter() const {
     return 0.5f * (min + max);
@@ -9,7 +10,8 @@ glm::vec3 Bound3D::getSize() const {
     return max - min;
 }
 
-OctreeNode::OctreeNode(Bound3D bound, PointCloudFileManager* fileManager) : m_fileManager(fileManager) {
+OctreeNode::OctreeNode(uint64_t id, Bound3D bound, PointCloudFileManager* fileManager) : m_fileManager(fileManager) {
+    m_id = id;
     m_bound = bound;
     m_points.reserve(MAX_CAPACITY);
 }
@@ -42,6 +44,22 @@ void OctreeNode::flushRemainingToDisk() {
 
 ChunkSpan OctreeNode::getChunkData() const {
     return m_chunkSpan;
+}
+
+void OctreeNode::getVisibleChunks(const Frustum& frustum, std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks) {
+    if (!frustum.intersects(m_bound))
+        return;
+
+    if (m_chunkSpan.pointCount > 0)
+        outChunks.push_back({m_id, m_chunkSpan});
+
+    for (const auto& child : m_children)
+        if (child)
+            child->getVisibleChunks(frustum, outChunks);
+}
+
+Bound3D OctreeNode::getBounds() const {
+    return m_bound;
 }
 
 int OctreeNode::getOctantIndex(const glm::vec3& position) const {
@@ -82,7 +100,8 @@ void OctreeNode::createChild(int index) {
     }
 
     Bound3D bound{min, max};
-    m_children[index] = std::make_unique<OctreeNode>(bound, m_fileManager);
+    uint64_t newId = m_id * 8 + (index + 1);
+    m_children[index] = std::make_unique<OctreeNode>(newId, bound, m_fileManager);
 }
 
 void OctreeNode::flushLODToDisk(const std::vector<PointCloudVertex>& lodPoints) {
@@ -140,7 +159,7 @@ void OctreeNode::splitAndPushDown() {
 
 Octree::Octree(PointCloudFileManager* fileManager, Bound3D bound)
     : m_fileManager(fileManager) {
-    m_root = std::make_unique<OctreeNode>(bound, m_fileManager);
+    m_root = std::make_unique<OctreeNode>(0, bound, m_fileManager);
 }
 
 void Octree::insert(const PointCloudVertex& p) {
@@ -151,4 +170,13 @@ void Octree::insert(const PointCloudVertex& p) {
 void Octree::flushRemainingToDisk() {
     if (m_root)
         m_root->flushRemainingToDisk();
+}
+
+void Octree::getVisibleChunks(const Frustum& frustum, std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks) {
+    if (m_root)
+        m_root->getVisibleChunks(frustum, outChunks);
+}
+
+Bound3D Octree::getTotalBounds() const {
+    return m_root->getBounds();
 }

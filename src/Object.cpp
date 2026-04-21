@@ -2,6 +2,7 @@
 #include "Object.h"
 #include "Buffer.h"
 #include "Octree.h"
+#include "Frustum.h"
 
 PointCloudObject::PointCloudObject(
     LPCWSTR filepath,
@@ -22,19 +23,27 @@ PointCloudObject::PointCloudObject(
     if (pointCount == 0)
         throw std::runtime_error("the Point Cloud data is empty!");
 
-    m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr);
     m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", path));
-    glm::vec3 min{info.m_bounds.minx, info.m_bounds.miny, info.m_bounds.minz};
-    glm::vec3 max{info.m_bounds.maxx, info.m_bounds.maxy, info.m_bounds.maxz};
-    Bound3D bound{min, max};
+    m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr, m_fileManager.get());
+
+    m_localOffset = glm::dvec3(
+        (info.m_bounds.minx + info.m_bounds.maxx) * 0.5,
+        (info.m_bounds.miny + info.m_bounds.maxy) * 0.5,
+        (info.m_bounds.minz + info.m_bounds.maxz) * 0.5
+    );
+
+    glm::vec3 min{ (float)(info.m_bounds.minx - m_localOffset.x), (float)(info.m_bounds.miny - m_localOffset.y), (float)(info.m_bounds.minz - m_localOffset.z) };
+    glm::vec3 max{ (float)(info.m_bounds.maxx - m_localOffset.x), (float)(info.m_bounds.maxy - m_localOffset.y), (float)(info.m_bounds.maxz - m_localOffset.z) };
+    
+    Bound3D bound{ min, max };
     m_octree = std::make_unique<Octree>(m_fileManager.get(), bound);
 
     auto callback = [&](pdal::PointRef& point) -> bool {
-        glm::vec3 pos{0.0f}, color{1.0f};
+        glm::vec3 pos{ 0.0f }, color{ 1.0f };
 
-        pos.x = point.getFieldAs<float>(pdal::Dimension::Id::X);
-        pos.y = point.getFieldAs<float>(pdal::Dimension::Id::Y);
-        pos.z = point.getFieldAs<float>(pdal::Dimension::Id::Z);
+        pos.x = (float)(point.getFieldAs<double>(pdal::Dimension::Id::X) - m_localOffset.x);
+        pos.y = (float)(point.getFieldAs<double>(pdal::Dimension::Id::Y) - m_localOffset.y);
+        pos.z = (float)(point.getFieldAs<double>(pdal::Dimension::Id::Z) - m_localOffset.z);
 
         if (point.hasDim(pdal::Dimension::Id::Red)) {
             color.r = point.getFieldAs<float>(pdal::Dimension::Id::Red) / 65535.0f;
@@ -42,7 +51,7 @@ PointCloudObject::PointCloudObject(
             color.b = point.getFieldAs<float>(pdal::Dimension::Id::Blue) / 65535.0f;
         }
 
-        m_octree->insert({pos, color, 0.0f});
+        m_octree->insert({ pos, color, 0.0f });
 
         return true;
     };
@@ -55,14 +64,40 @@ PointCloudObject::PointCloudObject(
     filter.prepare(table);
     filter.execute(table);
     m_octree->flushRemainingToDisk();
+
+    m_position = glm::vec3(0.0f);
 }
 
-void PointCloudObject::updateBufferState(TransferManager* transferManager) {
+void PointCloudObject::updateBufferState() {
     if (m_bufferManager) {
-        
+        m_bufferManager->updateBufferState();
     }
 }
 
-void PointCloudObject::draw(VkCommandBuffer commandBuffer) const {
+void PointCloudObject::draw(const Frustum& frustum, VkCommandBuffer commandBuffer) const {
+    std::vector<std::pair<uint64_t, ChunkSpan>> chunks;
 
+    if (m_octree)
+        m_octree->getVisibleChunks(frustum, chunks);
+
+    std::vector<PointCloudBuffer*> buffers;
+
+    if (m_bufferManager) {
+        for (auto&& chunk : chunks) {
+            auto buffer = m_bufferManager->getOrRequestBuffer(chunk.first, chunk.second);
+            if (buffer)
+                buffers.push_back(buffer);
+        }
+    }
+
+    for (auto buffer : buffers) {
+        if (buffer->isReady()) {
+            buffer->bind(commandBuffer);
+            buffer->draw(commandBuffer);
+        }
+    }
+}
+
+Bound3D PointCloudObject::getTotalBounds() const {
+    return m_octree->getTotalBounds();
 }

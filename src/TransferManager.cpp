@@ -26,7 +26,10 @@ TransferManager::~TransferManager() {
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 }
 
-uint64_t TransferManager::requestTransfer(VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+uint64_t TransferManager::requestTransfer(const std::vector<BufferCopyRequest>& requests) {
+    if (requests.empty())
+        return m_currentValue;
+
     m_currentValue++;
     uint64_t waitValue = m_currentValue;
 
@@ -44,8 +47,10 @@ uint64_t TransferManager::requestTransfer(VkBuffer src, VkBuffer dst, VkDeviceSi
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cb, &beginInfo);
 
-    VkBufferCopy copyRegion = { 0, 0, size };
-    vkCmdCopyBuffer(cb, src, dst, 1, &copyRegion);
+    for (const auto& req : requests) {
+        VkBufferCopy copyRegion = {req.srcOffset, req.dstOffset, req.size};
+        vkCmdCopyBuffer(cb, req.src, req.dst, 1, &copyRegion);
+    }
 
     vkEndCommandBuffer(cb);
 
@@ -63,6 +68,9 @@ uint64_t TransferManager::requestTransfer(VkBuffer src, VkBuffer dst, VkDeviceSi
     submitInfo.pSignalSemaphores = &m_timelineSemaphore;
 
     vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE);
+
+    vkDeviceWaitIdle(m_device);
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cb);
 
     return waitValue;
 }

@@ -1,12 +1,20 @@
 #pragma once
 
+struct BufferCopyRequest {
+    VkBuffer src;
+    VkDeviceSize srcOffset;
+    VkBuffer dst;
+    VkDeviceSize dstOffset;
+    VkDeviceSize size;
+};
+
 class TransferManager {
 public:
     TransferManager(VkDevice device, uint32_t queueFamilyIndex, VkQueue queue);
     ~TransferManager();
 
     // 전송을 요청하고 완료 식별값(Timeline Value)을 반환
-    uint64_t requestTransfer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    uint64_t requestTransfer(const std::vector<BufferCopyRequest>& requests);
     
     // 특정 전송이 완료되었는지 확인
     bool isFinished(uint64_t value);

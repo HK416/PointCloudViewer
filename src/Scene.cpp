@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "Scene.h"
 #include "Buffer.h"
+#include "Frustum.h"
+#include "Octree.h"
 
 MainScene::MainScene(
     HWND hWnd,
@@ -199,7 +201,6 @@ void MainScene::onUpdate(float elapsedTimeSec) {
     if (m_rightMouseDown) {
         m_camera.m_yaw += m_mouseDelta.x * m_camera.m_lookSensitivity;
         m_camera.m_pitch -= m_mouseDelta.y * m_camera.m_lookSensitivity;
-        m_camera.m_pitch = glm::clamp(m_camera.m_pitch, -89.0f, 89.0f);
     }
     m_mouseDelta = glm::vec2(0.0f); // Reset delta after use
 
@@ -232,7 +233,7 @@ void MainScene::onUpdate(float elapsedTimeSec) {
 
     // Update Mesh Status (Async Loading Check)
     if (m_pointCloud)
-        m_pointCloud->updateBufferState(m_transferMgr);
+        m_pointCloud->updateBufferState();
 }
 
 void MainScene::onDraw(VkCommandBuffer commandBuffer) {
@@ -259,11 +260,13 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
         glm::mat4 projMat = glm::perspective(glm::radians(m_camera.m_fov), m_viewport.width / m_viewport.height, m_camera.m_near, m_camera.m_far);
         projMat[1][1] *= -1; // Vulkan Y is down
 
-        glm::mat4 mvp = projMat * viewMat * model;
+        glm::mat4 vp = projMat * viewMat;
+        glm::mat4 mvp = vp * model;
 
+        Frustum frustum(mvp);
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
 
-        m_pointCloud->draw(commandBuffer);
+        m_pointCloud->draw(frustum, commandBuffer);
     }
 }
 
@@ -314,6 +317,8 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             if (DragQueryFile(hDrop, 0, szPath, MAX_PATH)) {
                 // Async Load
                 m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator, m_transferMgr);
+                Bound3D bounds = m_pointCloud->getTotalBounds();
+                m_camera.m_position = bounds.getCenter();
             }
         }
         DragFinish(hDrop);

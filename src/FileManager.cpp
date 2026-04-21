@@ -1,12 +1,13 @@
 #include "stdafx.h"
 #include "FileManager.h"
 
-PointCloudFileManager::PointCloudFileManager(const std::string& filename) {
-    m_dataFile.open(filename, std::ios::binary | std::ios::app);
+PointCloudFileManager::PointCloudFileManager(const std::string& filePath) {
+    m_dataFile.open(filePath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
     if (!m_dataFile.is_open()) {
         throw std::runtime_error("Cannot open data file!");
     }
 
+    m_filePath = filePath;
     m_dataFile.seekp(0, std::ios::end);
     m_currentWriteOffset = m_dataFile.tellp();
 }
@@ -14,6 +15,8 @@ PointCloudFileManager::PointCloudFileManager(const std::string& filename) {
 PointCloudFileManager::~PointCloudFileManager() {
     if (m_dataFile.is_open())
         m_dataFile.close();
+
+    std::filesystem::remove(m_filePath);
 }
 
 std::vector<PointCloudVertex> PointCloudFileManager::readData(ChunkSpan span) {
@@ -23,7 +26,8 @@ std::vector<PointCloudVertex> PointCloudFileManager::readData(ChunkSpan span) {
     size_t sizeInBytes = span.pointCount * sizeof(PointCloudVertex);
     std::vector<PointCloudVertex> points(span.pointCount);
 
-    m_dataFile.seekp(span.offsetBytes, std::ios::beg);
+    m_dataFile.clear();
+    m_dataFile.seekg(span.offsetBytes, std::ios::beg);
     m_dataFile.read(reinterpret_cast<char*>(points.data()), sizeInBytes);
 
     return points;
@@ -36,7 +40,7 @@ ChunkSpan PointCloudFileManager::writeData(const std::vector<PointCloudVertex>& 
     size_t sizeInBytes = points.size() * sizeof(PointCloudVertex);
     ChunkSpan span{m_currentWriteOffset, points.size()};
 
-    m_dataFile.seekp(0, std::ios::end);
+    m_dataFile.seekp(m_currentWriteOffset, std::ios::beg);
     m_dataFile.write(reinterpret_cast<const char*>(points.data()), sizeInBytes);
     m_dataFile.flush();
 

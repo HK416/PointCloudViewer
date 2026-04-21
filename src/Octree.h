@@ -2,6 +2,8 @@
 #include "Buffer.h"
 #include "FileManager.h"
 
+struct Frustum;
+
 struct Bound3D {
     glm::vec3 min;
     glm::vec3 max;
@@ -14,11 +16,18 @@ class OctreeNode {
 public:
     OctreeNode() = delete;
     OctreeNode(const OctreeNode&) = delete;
-    OctreeNode(Bound3D bound, PointCloudFileManager* fileManager);
+    OctreeNode(uint64_t id, Bound3D bound, PointCloudFileManager* fileManager);
 
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
     ChunkSpan getChunkData() const;
+
+    void getVisibleChunks(
+        const Frustum& frustum,
+        std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks
+    );
+
+    Bound3D getBounds() const;
 
 private:
     int getOctantIndex(const glm::vec3& position) const;
@@ -29,6 +38,7 @@ private:
 
 private:
     bool m_leafNode = true;
+    uint64_t m_id = 0;
     ChunkSpan m_chunkSpan;
     Bound3D m_bound;
     std::unique_ptr<OctreeNode> m_children[8];
@@ -49,6 +59,13 @@ public:
 public:
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
+
+    void getVisibleChunks(
+        const Frustum& frustum,
+        std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks
+    );
+    
+    Bound3D getTotalBounds() const;
 
 private:
     PointCloudFileManager* m_fileManager;

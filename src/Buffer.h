@@ -2,6 +2,7 @@
 
 struct ChunkSpan;
 class TransferManager;
+class PointCloudFileManager;
 
 struct PointCloudVertex {
     glm::vec3 position;
@@ -10,6 +11,12 @@ struct PointCloudVertex {
 };
 
 class PointCloudBuffer {
+private:
+    struct StagingChunk {
+        VkBuffer buffer;
+        VmaAllocation allocation;
+    };
+
 public:
     PointCloudBuffer() = delete;
     PointCloudBuffer(const PointCloudBuffer&) = delete;
@@ -38,8 +45,7 @@ private:
     VkDevice m_device = VK_NULL_HANDLE;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
 
-    VkBuffer m_stagingBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_stagingAllocation = VK_NULL_HANDLE;
+    std::vector<StagingChunk> m_stagingChunks;
 
     VkBuffer m_pointCloudBuffer = VK_NULL_HANDLE;
     VmaAllocation m_pointCloudAllocation = VK_NULL_HANDLE;
@@ -49,7 +55,7 @@ class PointCloudBufferManager {
 private:
     struct CacheNode {
         uint64_t id;
-        PointCloudBuffer buffer;
+        std::unique_ptr<PointCloudBuffer> buffer;
     };
 
 public:
@@ -59,13 +65,15 @@ public:
         VkDevice device,
         VmaAllocator allocator,
         TransferManager* transferManager,
-        size_t capacity = 64
+        PointCloudFileManager* fileManager,
+        size_t capacity = 32
     );
 
 private:
     void evict();
 
 public:
+    void updateBufferState();
     PointCloudBuffer* getOrRequestBuffer(uint64_t id, ChunkSpan span);
 
 private:
@@ -76,4 +84,5 @@ private:
     std::list<CacheNode> m_lruList;
     std::unordered_map<uint64_t, std::list<CacheNode>::iterator> m_cacheMap;
     TransferManager* m_transferManager;
+    PointCloudFileManager* m_fileManager;
 };

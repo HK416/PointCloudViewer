@@ -10,13 +10,14 @@ class PointCloudFileManager {
 public:
     PointCloudFileManager() = delete;
     PointCloudFileManager(const PointCloudFileManager&) = delete;
-    PointCloudFileManager(const std::string& filename);
+    PointCloudFileManager(const std::string& filePath);
     ~PointCloudFileManager();
 
     std::vector<PointCloudVertex> readData(ChunkSpan span);
     ChunkSpan writeData(const std::vector<PointCloudVertex>& points);
 
 private:
+    std::string m_filePath;
     std::fstream m_dataFile;
     size_t m_currentWriteOffset = 0;
 };
