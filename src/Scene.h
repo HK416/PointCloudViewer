@@ -53,6 +53,7 @@ private:
     glm::vec2 m_lastMousePos{0.0f};
     glm::vec2 m_mouseDelta{0.0f};
     bool m_rightMouseDown = false;
+    POINT m_capturedMousePos{0, 0};
 
     VkRect2D m_scissor;
     VkViewport m_viewport;

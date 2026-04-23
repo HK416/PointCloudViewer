@@ -308,19 +308,58 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             m_keys.set(wParam, false);
         break;
     case WM_RBUTTONDOWN:
-        m_rightMouseDown = true;
-        SetCapture(hWnd);
+        if (!m_rightMouseDown) {
+            m_rightMouseDown = true;
+            SetCapture(hWnd);
+
+            GetCursorPos(&m_capturedMousePos);
+            ShowCursor(FALSE);
+
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            POINT center = {(rect.right - rect.left) / 2, (rect.bottom - rect.top) / 2};
+
+            m_lastMousePos = glm::vec2((float)center.x, (float)center.y);
+            ClientToScreen(hWnd, &center);
+            SetCursorPos(center.x, center.y);
+        }
         break;
     case WM_RBUTTONUP:
-        m_rightMouseDown = false;
-        ReleaseCapture();
+        if (m_rightMouseDown) {
+            m_rightMouseDown = false;
+            ReleaseCapture();
+
+            SetCursorPos(m_capturedMousePos.x, m_capturedMousePos.y);
+            ShowCursor(TRUE);
+
+            POINT clientPos = m_capturedMousePos;
+            ScreenToClient(hWnd, &clientPos);
+            m_lastMousePos = glm::vec2((float)clientPos.x, (float)clientPos.y);
+            m_mouseDelta = glm::vec2(0.0f);
+        }
         break;
     case WM_MOUSEMOVE:
     {
         float xPos = (float)LOWORD(lParam);
         float yPos = (float)HIWORD(lParam);
-        m_mouseDelta += glm::vec2(xPos - m_lastMousePos.x, yPos - m_lastMousePos.y);
-        m_lastMousePos = glm::vec2(xPos, yPos);
+
+        if (m_rightMouseDown) {
+            float dx = xPos - m_lastMousePos.x;
+            float dy = yPos - m_lastMousePos.y;
+
+            if (dx != 0.0f || dy != 0.0f) {
+                m_mouseDelta += glm::vec2(dx, dy);
+
+                RECT rect;
+                GetClientRect(hWnd, &rect);
+                POINT center { (rect.right - rect.left) / 2, (rect.bottom - rect.top) / 2};
+
+                m_lastMousePos = glm::vec2((float)center.x, (float)center.y);
+
+                ClientToScreen(hWnd, &center);
+                SetCursorPos(center.x, center.y);
+            } 
+        }
         break;
     }
     case WM_DROPFILES:

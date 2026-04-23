@@ -67,6 +67,7 @@ PointCloudObject::PointCloudObject(
     m_octree->flushRemainingToDisk();
 
     m_position = glm::vec3(0.0f);
+    m_rotation = glm::quat(glm::vec3(glm::radians(-90.0f), 0.0f, 0.0f));
 }
 
 void PointCloudObject::updateBufferState() {
