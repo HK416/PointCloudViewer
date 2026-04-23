@@ -22,11 +22,36 @@ TransferManager::TransferManager(VkDevice device, uint32_t queueFamilyIndex, VkQ
 }
 
 TransferManager::~TransferManager() {
+    vkDeviceWaitIdle(m_device);
+
+    while (!m_inFlightTransfers.empty()) {
+        auto& transfer = m_inFlightTransfers.front();
+        vkFreeCommandBuffers(m_device, m_commandPool, 1, &transfer.commandBuffer);
+        m_inFlightTransfers.pop();
+    }
+
     vkDestroySemaphore(m_device, m_timelineSemaphore, nullptr);
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 }
 
+void TransferManager::garbageCollect() {
+    uint64_t completedValue;
+    vkGetSemaphoreCounterValue(m_device, m_timelineSemaphore, &completedValue);
+
+    while (!m_inFlightTransfers.empty()) {
+        auto& transfer = m_inFlightTransfers.front();
+        if (transfer.timelineValue <= completedValue) {
+            vkFreeCommandBuffers(m_device, m_commandPool, 1, &transfer.commandBuffer);
+            m_inFlightTransfers.pop();
+        } else {
+            break;
+        }
+    }
+}
+
 uint64_t TransferManager::requestTransfer(const std::vector<BufferCopyRequest>& requests) {
+    garbageCollect();
+
     if (requests.empty())
         return m_currentValue;
 
@@ -69,13 +94,14 @@ uint64_t TransferManager::requestTransfer(const std::vector<BufferCopyRequest>& 
 
     vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE);
 
-    vkDeviceWaitIdle(m_device);
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cb);
+    m_inFlightTransfers.push({waitValue, cb});
 
     return waitValue;
 }
 
 bool TransferManager::isFinished(uint64_t value) {
+    garbageCollect();
+
     uint64_t counter;
     vkGetSemaphoreCounterValue(m_device, m_timelineSemaphore, &counter);
     return counter >= value;

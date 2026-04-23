@@ -61,4 +61,7 @@ private:
 
     CameraObject m_camera;
     std::unique_ptr<PointCloudObject> m_pointCloud;
+
+    std::atomic<bool> m_isLoading{false};
+    std::future<std::unique_ptr<PointCloudObject>> m_loadingFuture;
 };

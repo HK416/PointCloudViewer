@@ -5,15 +5,16 @@
 #include "Frustum.h"
 
 PointCloudObject::PointCloudObject(
-    LPCWSTR filepath,
+    const std::filesystem::path& filePath,
     VkDevice device,
     VmaAllocator allocator,
     TransferManager* transferMgr
 ) {
-    std::string path((char*)CW2A(filepath));
+    std::u8string u8Path = filePath.u8string();
+    std::string utf8PathStr(reinterpret_cast<const char*>(u8Path.c_str()), u8Path.size());
 
     pdal::Options options;
-    options.add("filename", path);
+    options.add("filename", utf8PathStr);
 
     pdal::LasReader reader;
     reader.setOptions(options);
@@ -23,7 +24,7 @@ PointCloudObject::PointCloudObject(
     if (pointCount == 0)
         throw std::runtime_error("the Point Cloud data is empty!");
 
-    m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", path));
+    m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", utf8PathStr));
     m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr, m_fileManager.get());
 
     m_localOffset = glm::dvec3(

@@ -36,7 +36,7 @@ class PointCloudObject : public Object {
 public:
     PointCloudObject() = delete;
     PointCloudObject(const PointCloudObject&) = delete;
-    PointCloudObject(LPCWSTR filepath, VkDevice device, VmaAllocator allocator, TransferManager* transferMgr);
+    PointCloudObject(const std::filesystem::path& filePath, VkDevice device, VmaAllocator allocator, TransferManager* transferMgr);
 
 public:
     void updateBufferState();

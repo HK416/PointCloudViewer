@@ -197,6 +197,21 @@ void MainScene::buildPipeline(VkDevice device) {
 }
 
 void MainScene::onUpdate(float elapsedTimeSec) {
+    if (m_isLoading && m_loadingFuture.valid()) {
+        if (m_loadingFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                m_pointCloud = m_loadingFuture.get();
+                Bound3D bounds = m_pointCloud->getTotalBounds();
+                m_camera.m_position = bounds.getCenter();
+            }
+            catch (const std::exception& e) {
+                ATL::CA2T msg(e.what());
+                MessageBox(m_hWnd, msg, L"Load Error", MB_ICONERROR);
+            }
+            m_isLoading = false;
+        }
+    }
+
     // Rotate
     if (m_rightMouseDown) {
         m_camera.m_yaw += m_mouseDelta.x * m_camera.m_lookSensitivity;
@@ -312,13 +327,24 @@ void MainScene::onHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     {
         HDROP hDrop = (HDROP)wParam;
         UINT fileCount = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, 0);
-        if (fileCount > 0) {
+
+        if (fileCount > 0 && !m_isLoading) {
             WCHAR szPath[MAX_PATH];
             if (DragQueryFile(hDrop, 0, szPath, MAX_PATH)) {
-                // Async Load
-                m_pointCloud = std::make_unique<PointCloudObject>(szPath, m_device, m_allocator, m_transferMgr);
-                Bound3D bounds = m_pointCloud->getTotalBounds();
-                m_camera.m_position = bounds.getCenter();
+                std::filesystem::path filePath(szPath);
+                m_isLoading = true;
+
+                m_loadingFuture = std::async(
+                    std::launch::async,
+                    [filePath,
+                     device = m_device,
+                     allocator = m_allocator,
+                     transferMgr = m_transferMgr]() {
+                        return std::make_unique<PointCloudObject>(
+                            filePath, device, allocator, transferMgr
+                        );
+                    }
+                );
             }
         }
         DragFinish(hDrop);
