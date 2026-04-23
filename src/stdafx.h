@@ -34,6 +34,7 @@
 #include <string>
 #include <atomic>
 #include <future>
+#include <mutex>
 #include <memory>
 #include <vector>
 #include <bitset>

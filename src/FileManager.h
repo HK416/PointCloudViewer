@@ -20,4 +20,6 @@ private:
     std::string m_filePath;
     std::fstream m_dataFile;
     size_t m_currentWriteOffset = 0;
+
+    std::mutex m_fileMutex;
 };

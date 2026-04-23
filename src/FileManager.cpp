@@ -26,6 +26,8 @@ std::vector<PointCloudVertex> PointCloudFileManager::readData(ChunkSpan span) {
     size_t sizeInBytes = span.pointCount * sizeof(PointCloudVertex);
     std::vector<PointCloudVertex> points(span.pointCount);
 
+    std::lock_guard<std::mutex> lock(m_fileMutex);
+
     m_dataFile.clear();
     m_dataFile.seekg(span.offsetBytes, std::ios::beg);
     m_dataFile.read(reinterpret_cast<char*>(points.data()), sizeInBytes);

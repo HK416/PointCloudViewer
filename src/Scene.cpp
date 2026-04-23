@@ -281,7 +281,7 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
         Frustum frustum(mvp);
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
 
-        m_pointCloud->draw(frustum, commandBuffer);
+        m_pointCloud->draw(frustum, m_camera.m_position, commandBuffer);
     }
 }
 

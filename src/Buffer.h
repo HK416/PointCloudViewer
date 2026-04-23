@@ -56,6 +56,11 @@ private:
     struct CacheNode {
         uint64_t id;
         std::unique_ptr<PointCloudBuffer> buffer;
+        
+        bool isLoading = false;
+        std::future<std::vector<PointCloudVertex>> loadFuture;
+
+        bool usedThisFrame = false;
     };
 
 public:
@@ -66,13 +71,14 @@ public:
         VmaAllocator allocator,
         TransferManager* transferManager,
         PointCloudFileManager* fileManager,
-        size_t capacity = 32
+        size_t capacity = 2048
     );
 
 private:
     void evict();
 
 public:
+    void beginFrame();
     void updateBufferState();
     PointCloudBuffer* getOrRequestBuffer(uint64_t id, ChunkSpan span);
 
@@ -85,4 +91,6 @@ private:
     std::unordered_map<uint64_t, std::list<CacheNode>::iterator> m_cacheMap;
     TransferManager* m_transferManager;
     PointCloudFileManager* m_fileManager;
+
+    std::vector<std::unique_ptr<PointCloudBuffer>> m_garbageList;
 };

@@ -12,6 +12,12 @@ struct Bound3D {
     glm::vec3 getSize() const;
 };
 
+struct ChunkRenderInfo {
+    uint64_t id;
+    ChunkSpan span;
+    glm::vec3 center;
+};
+
 class OctreeNode {
 public:
     OctreeNode() = delete;
@@ -24,7 +30,8 @@ public:
 
     void getVisibleChunks(
         const Frustum& frustum,
-        std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks
+        glm::vec3 localCameraPos,
+        std::vector<ChunkRenderInfo>& outChunks
     );
 
     Bound3D getBounds() const;
@@ -32,7 +39,7 @@ public:
 private:
     int getOctantIndex(const glm::vec3& position) const;
     void createChild(int index);
-    void flushLODToDisk(const std::vector<PointCloudVertex>& lodPoints);
+
     void insertIntoChild(const PointCloudVertex& p);
     void splitAndPushDown();
 
@@ -45,9 +52,12 @@ private:
     std::vector<PointCloudVertex> m_points;
     PointCloudFileManager* m_fileManager;
 
+    std::vector<bool> m_voxelOccupancy;
+    std::vector<PointCloudVertex> m_lodPoints;
+
 public:
-    static const int MAX_CAPACITY = 65536;
-    static const int GRID_RES = 32;
+    static const int GRID_RES = 64;
+    static const int MAX_CAPACITY = GRID_RES * GRID_RES * GRID_RES;
 };
 
 class Octree {
@@ -62,7 +72,8 @@ public:
 
     void getVisibleChunks(
         const Frustum& frustum,
-        std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks
+        glm::vec3 localCameraPos,
+        std::vector<ChunkRenderInfo>& outChunks
     );
     
     Bound3D getTotalBounds() const;

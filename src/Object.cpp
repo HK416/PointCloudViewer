@@ -76,19 +76,33 @@ void PointCloudObject::updateBufferState() {
     }
 }
 
-void PointCloudObject::draw(const Frustum& frustum, VkCommandBuffer commandBuffer) const {
-    std::vector<std::pair<uint64_t, ChunkSpan>> chunks;
+void PointCloudObject::draw(const Frustum& frustum, glm::vec3 cameraPos, VkCommandBuffer commandBuffer) const {
+    if (m_bufferManager) {
+        m_bufferManager->beginFrame();
+    }
 
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), m_position) *
+                      glm::mat4_cast(m_rotation) *
+                      glm::scale(glm::mat4(1.0f), m_scale);
+    glm::mat4 invModel = glm::inverse(model);
+    glm::vec3 localCameraPos = glm::vec3(invModel * glm::vec4(cameraPos, 1.0f));
+
+    std::vector<ChunkRenderInfo> chunks;
     if (m_octree)
-        m_octree->getVisibleChunks(frustum, chunks);
+        m_octree->getVisibleChunks(frustum, localCameraPos, chunks);
+
+    std::sort(chunks.begin(), chunks.end(), [&localCameraPos](const ChunkRenderInfo& a, const ChunkRenderInfo& b) {
+        float distA = glm::dot(localCameraPos - a.center, localCameraPos - a.center);
+        float distB = glm::dot(localCameraPos - b.center, localCameraPos - b.center);
+        return distA < distB;
+    });
 
     std::vector<PointCloudBuffer*> buffers;
 
     if (m_bufferManager) {
         for (auto&& chunk : chunks) {
-            auto buffer = m_bufferManager->getOrRequestBuffer(chunk.first, chunk.second);
-            if (buffer)
-                buffers.push_back(buffer);
+            auto buffer = m_bufferManager->getOrRequestBuffer(chunk.id, chunk.span);
+            if (buffer) buffers.push_back(buffer);
         }
     }
 

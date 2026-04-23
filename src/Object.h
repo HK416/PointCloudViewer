@@ -40,7 +40,7 @@ public:
 
 public:
     void updateBufferState();
-    void draw(const Frustum& frustum, VkCommandBuffer commandBuffer) const;
+    void draw(const Frustum& frustum, glm::vec3 cameraPos, VkCommandBuffer commandBuffer) const;
 
     Bound3D getTotalBounds() const;
 

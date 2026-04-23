@@ -18,6 +18,18 @@ OctreeNode::OctreeNode(uint64_t id, Bound3D bound, PointCloudFileManager* fileMa
 
 void OctreeNode::insert(const PointCloudVertex& p) {
     if (!m_leafNode) {
+        glm::vec3 voxelSize = m_bound.getSize() / glm::vec3(GRID_RES);
+        int vx = std::clamp(static_cast<int>((p.position.x - m_bound.min.x) / voxelSize.x), 0, GRID_RES - 1);
+        int vy = std::clamp(static_cast<int>((p.position.y - m_bound.min.y) / voxelSize.y), 0, GRID_RES - 1);
+        int vz = std::clamp(static_cast<int>((p.position.z - m_bound.min.z) / voxelSize.z), 0, GRID_RES - 1);
+
+        int index = vz * GRID_RES * GRID_RES + vy * GRID_RES + vx;
+
+        if (!m_voxelOccupancy[index] && m_lodPoints.size() < MAX_CAPACITY) {
+            m_voxelOccupancy[index] = true;
+            m_lodPoints.emplace_back(p);
+        }
+
         insertIntoChild(p);
         return;
     }
@@ -29,11 +41,29 @@ void OctreeNode::insert(const PointCloudVertex& p) {
     }
 }
 
+void OctreeNode::insertIntoChild(const PointCloudVertex& p) {
+    int octantIndex = getOctantIndex(p.position);
+    if (!m_children[octantIndex]) {
+        createChild(octantIndex);
+    }
+    m_children[octantIndex]->insert(p);
+}
+
 void OctreeNode::flushRemainingToDisk() {
-    if (m_leafNode && !m_points.empty()) {
-        m_chunkSpan = m_fileManager->writeData(m_points);
-        m_points.clear();
-        m_points.shrink_to_fit();
+    if (m_leafNode) {
+        if (!m_points.empty()) {
+            m_chunkSpan = m_fileManager->writeData(m_points);
+            m_points.clear();
+            m_points.shrink_to_fit();
+        }
+    } else {
+        if (!m_lodPoints.empty()) {
+            m_chunkSpan = m_fileManager->writeData(m_lodPoints);
+            m_lodPoints.clear();
+            m_lodPoints.shrink_to_fit();
+        }
+        m_voxelOccupancy.clear();
+        m_voxelOccupancy.shrink_to_fit();
     }
 
     for (auto& child : m_children) {
@@ -46,16 +76,26 @@ ChunkSpan OctreeNode::getChunkData() const {
     return m_chunkSpan;
 }
 
-void OctreeNode::getVisibleChunks(const Frustum& frustum, std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks) {
+void OctreeNode::getVisibleChunks(
+    const Frustum& frustum,
+    glm::vec3 localCameraPos,
+    std::vector<ChunkRenderInfo>& outChunks
+) {
     if (!frustum.intersects(m_bound))
         return;
 
     if (m_chunkSpan.pointCount > 0)
-        outChunks.push_back({m_id, m_chunkSpan});
+        outChunks.push_back({m_id, m_chunkSpan, m_bound.getCenter()});
+
+    float dist = glm::distance(localCameraPos, m_bound.getCenter());
+    float nodeDiagonal = glm::length(m_bound.getSize());
+    if (!m_leafNode && dist > nodeDiagonal * 3.0f) {
+        return;
+    }
 
     for (const auto& child : m_children)
         if (child)
-            child->getVisibleChunks(frustum, outChunks);
+            child->getVisibleChunks(frustum, localCameraPos, outChunks);
 }
 
 Bound3D OctreeNode::getBounds() const {
@@ -104,32 +144,14 @@ void OctreeNode::createChild(int index) {
     m_children[index] = std::make_unique<OctreeNode>(newId, bound, m_fileManager);
 }
 
-void OctreeNode::flushLODToDisk(const std::vector<PointCloudVertex>& lodPoints) {
-    if (lodPoints.empty())
-        return;
-
-    m_chunkSpan = m_fileManager->writeData(lodPoints);
-}
-
-void OctreeNode::insertIntoChild(const PointCloudVertex& p) {
-    int octantIndex = getOctantIndex(p.position);
-    if (!m_children[octantIndex]) {
-        createChild(octantIndex);
-    }
-    m_children[octantIndex]->insert(p);
-}
-
 void OctreeNode::splitAndPushDown() {
     m_leafNode = false;
 
-    std::vector<bool> voxelOccupancy;
-    voxelOccupancy.resize(GRID_RES * GRID_RES * GRID_RES, false);
-    glm::vec3 voxelSize = m_bound.getSize() / glm::vec3(GRID_RES);
+    m_voxelOccupancy.assign(MAX_CAPACITY, false);
+    m_lodPoints.reserve(MAX_CAPACITY);
 
-    std::vector<PointCloudVertex> lodPoints;
+    glm::vec3 voxelSize = m_bound.getSize() / glm::vec3(GRID_RES);
     std::vector<PointCloudVertex> pushDownPoints;
-    
-    lodPoints.reserve(GRID_RES * GRID_RES * GRID_RES);
     pushDownPoints.reserve(MAX_CAPACITY);
 
     for (const auto& p : m_points) {
@@ -138,10 +160,10 @@ void OctreeNode::splitAndPushDown() {
         int vz = std::clamp(static_cast<int>((p.position.z - m_bound.min.z) / voxelSize.z), 0, GRID_RES - 1);
 
         int index = vz * GRID_RES * GRID_RES + vy * GRID_RES + vx;
-
-        if (!voxelOccupancy[index]) {
-            voxelOccupancy[index] = true;
-            lodPoints.emplace_back(p);
+        
+        if (!m_voxelOccupancy[index]) {
+            m_voxelOccupancy[index] = true;
+            m_lodPoints.emplace_back(p);
         } else {
             pushDownPoints.emplace_back(p);
         }
@@ -149,8 +171,6 @@ void OctreeNode::splitAndPushDown() {
 
     m_points.clear();
     m_points.shrink_to_fit();
-
-    flushLODToDisk(lodPoints);
 
     for (const auto& p : pushDownPoints) {
         insertIntoChild(p);
@@ -172,9 +192,13 @@ void Octree::flushRemainingToDisk() {
         m_root->flushRemainingToDisk();
 }
 
-void Octree::getVisibleChunks(const Frustum& frustum, std::vector<std::pair<uint64_t, ChunkSpan>>& outChunks) {
+void Octree::getVisibleChunks(
+    const Frustum& frustum, 
+    glm::vec3 localCameraPos,
+    std::vector<ChunkRenderInfo>& outChunks
+) {
     if (m_root)
-        m_root->getVisibleChunks(frustum, outChunks);
+        m_root->getVisibleChunks(frustum, localCameraPos, outChunks);
 }
 
 Bound3D Octree::getTotalBounds() const {

@@ -144,14 +144,38 @@ void PointCloudBufferManager::evict() {
     if (m_lruList.empty())
         return;
 
-    const auto& last = m_lruList.back();
-    m_cacheMap.erase(last.id);
+    if (m_lruList.back().buffer) {
+        m_garbageList.push_back(std::move(m_lruList.back().buffer));
+    }
+
+    m_cacheMap.erase(m_lruList.back().id);
     m_lruList.pop_back();
+}
+
+void PointCloudBufferManager::beginFrame() {
+    for (auto& node : m_lruList) {
+        node.usedThisFrame = false;
+    }
+    m_garbageList.clear();
 }
 
 void PointCloudBufferManager::updateBufferState() {
     for (auto& node : m_lruList) {
-        node.buffer->updateStatus(m_transferManager);
+        if (node.isLoading) {
+            if (node.loadFuture.valid() &&
+                node.loadFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                std::vector<PointCloudVertex> vertices = node.loadFuture.get();
+
+                if (!vertices.empty()) {
+                    node.buffer = std::make_unique<PointCloudBuffer>(
+                        m_device, m_allocator, m_transferManager, vertices
+                    );
+                }
+                node.isLoading = false;
+            }
+        } else if (node.buffer) {
+            node.buffer->updateStatus(m_transferManager);
+        }
     }
 }
 
@@ -161,27 +185,32 @@ PointCloudBuffer* PointCloudBufferManager::getOrRequestBuffer(uint64_t id, Chunk
     // Cache Hit
     if (it != m_cacheMap.end()) {
         m_lruList.splice(m_lruList.begin(), m_lruList, it->second);
+        it->second->usedThisFrame = true;
         return it->second->buffer.get();
     }
 
+    // Cache Miss
     if (m_cacheMap.size() >= m_capacity) {
-        if (!m_lruList.back().buffer->isReady()) {
-            m_capacity *= 2;
+        if (m_lruList.back().isLoading || 
+            !m_lruList.back().buffer->isReady() ||
+            m_lruList.back().usedThisFrame) {
+            return nullptr;
         } else {
             evict();
         }
     }
 
-    std::vector<PointCloudVertex> vertices = m_fileManager->readData(span);
-    if (vertices.empty())
-        return nullptr;
+    CacheNode newNode;
+    newNode.id = id;
+    newNode.isLoading = true;
+    newNode.usedThisFrame = true;
 
-    auto newBuffer = std::make_unique<PointCloudBuffer>(
-        m_device, m_allocator, m_transferManager, vertices
-    );
+    newNode.loadFuture = std::async(std::launch::async, [this, span]() {
+        return m_fileManager->readData(span);
+    });
 
-    m_lruList.push_front({id, std::move(newBuffer)});
+    m_lruList.push_front(std::move(newNode));
     m_cacheMap[id] = m_lruList.begin();
 
-    return m_lruList.front().buffer.get();
+    return nullptr;
 }
