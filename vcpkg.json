@@ -5,6 +5,13 @@
       "pdal",
       "vulkan",
       "glm",
-      "vulkan-memory-allocator"
+      "vulkan-memory-allocator",
+      {
+        "name": "imgui",
+        "features": [
+          "vulkan-binding",
+          "win32-binding"
+        ]
+      }
     ]
 }

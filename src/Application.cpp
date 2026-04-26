@@ -7,6 +7,10 @@
 
 LPCWSTR CLASS_NAME = L"PointCloudViewer";
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
+);
+
 Application::Application(LPCWSTR title, LONG width, LONG height) {
     m_hInstance = GetModuleHandle(NULL);
     m_hWnd = createWindow(m_hInstance, CLASS_NAME, title, width, height);
@@ -38,6 +42,8 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
         m_device, m_graphicsQueueFamilyIndex, m_graphicsQueue
     );
 
+    initImGui();
+    
     m_scene = std::make_unique<MainScene>(
         m_hWnd, m_device, m_graphicsQueue, m_allocator, m_commandPool, m_transferManager.get()
     );
@@ -46,6 +52,15 @@ Application::Application(LPCWSTR title, LONG width, LONG height) {
 Application::~Application() {
     if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
+        
+        // ImGui Resources
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+
+        if (m_imguiDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);  
+        }
 
         // Sync & Commands
         vkDestroyFence(m_device, m_inFlightFence, NULL);
@@ -361,6 +376,66 @@ void Application::createSyncObjects() {
     }
 }
 
+void Application::initImGui() {
+    VkDescriptorPoolSize poolSizes[] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}
+    };
+
+    VkDescriptorPoolCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    createInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    createInfo.maxSets = 1000 * IM_ARRAYSIZE(poolSizes);
+    createInfo.poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(poolSizes));
+    createInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(m_device, &createInfo, nullptr, &m_imguiDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create ImGui descriptor pool!");
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+    
+    // Initialize Win32 Backends
+    ImGui_ImplWin32_Init(m_hWnd);
+
+    // Initialize Vulkan Backends
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.Instance = m_instance;
+    initInfo.PhysicalDevice = m_physicalDevice;
+    initInfo.Device = m_device;
+    initInfo.QueueFamily = m_graphicsQueueFamilyIndex;
+    initInfo.Queue = m_graphicsQueue;
+    initInfo.PipelineCache = VK_NULL_HANDLE;
+    initInfo.DescriptorPool = m_imguiDescriptorPool;
+    initInfo.Subpass = 0;
+    initInfo.MinImageCount = static_cast<uint32_t>(m_swapchainImages.size());
+    initInfo.ImageCount = static_cast<uint32_t>(m_swapchainImages.size());
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.Allocator = nullptr;
+    initInfo.CheckVkResultFn = nullptr;
+
+    initInfo.UseDynamicRendering = true;
+    initInfo.PipelineRenderingCreateInfo = {};
+    initInfo.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    initInfo.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    initInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats = &m_swapchainImageFormat;
+    initInfo.PipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+
+    ImGui_ImplVulkan_Init(&initInfo);
+}
+
 void Application::recordCommandBuffer(
     VkCommandBuffer commandBuffer, uint32_t imageIndex
 ) {
@@ -437,6 +512,8 @@ void Application::recordCommandBuffer(
     if (m_scene) {
         m_scene->onDraw(commandBuffer);
     }
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
     vkCmdEndRendering(commandBuffer);
 
@@ -547,6 +624,8 @@ void Application::recreateSwapchain() {
     createImageViews();
     createDepthResources();
 
+    ImGui_ImplVulkan_SetMinImageCount(static_cast<uint32_t>(m_swapchainImages.size()));
+
     if (m_scene) {
         m_scene->onResize(width, height);
     }
@@ -572,6 +651,9 @@ void Application::run() {
             if (m_scene) {
                 m_scene->onUpdate(deltaTime);
             }
+
+            ImGui_ImplVulkan_NewFrame();
+            ImGui_ImplWin32_NewFrame();
 
             drawFrame();
         }
@@ -602,6 +684,9 @@ LRESULT Application::onHandleMessage(
 }
 
 LRESULT Application::wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
+        return TRUE;
+
     Application* app = (Application*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     if (uMsg == WM_NCCREATE) {
         LPCREATESTRUCT pCreateStruct = (LPCREATESTRUCT)lParam;

@@ -255,6 +255,32 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
     vkCmdSetViewport(commandBuffer, 0, 1, &m_viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &m_scissor);
 
+    ImGui::NewFrame();
+    if (m_isLoading && !m_wasLoading) {
+        ImGui::OpenPopup("Loading Modal");
+    }
+    m_wasLoading = m_isLoading;
+
+    ImGuiWindowFlags modalFlags = ImGuiWindowFlags_AlwaysAutoResize |
+                                  ImGuiWindowFlags_NoMove |
+                                  ImGuiWindowFlags_NoCollapse;
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Loading Modal", NULL, modalFlags)) {
+        ImGui::Text("Now Loading...");
+        ImGui::Separator();
+
+        if (!m_isLoading) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::Render();
+
     if (m_pipelineLayout == VK_NULL_HANDLE)
         return;
 

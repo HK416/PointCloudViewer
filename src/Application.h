@@ -28,6 +28,9 @@ private:
     void createCommandBuffers();
     void createSyncObjects();
 
+    // GUI Resource
+    void initImGui();
+
     // Loop logic
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void drawFrame();
@@ -65,6 +68,8 @@ private:
     VkSemaphore m_imageAvailableSemaphore = VK_NULL_HANDLE;
     VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence m_inFlightFence = VK_NULL_HANDLE;
+
+    VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 
     bool m_framebufferResized = false;
 
