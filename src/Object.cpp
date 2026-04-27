@@ -11,10 +11,14 @@ PointCloudObject::PointCloudObject(
     TransferManager* transferMgr
 ) {
     std::u8string u8Path = filePath.u8string();
-    std::string utf8PathStr(reinterpret_cast<const char*>(u8Path.c_str()), u8Path.size());
+    m_utf8FilePath.assign(reinterpret_cast<const char*>(u8Path.c_str()), u8Path.size());
+
+    std::error_code ec;
+    m_fileSize = std::filesystem::file_size(filePath, ec);
+    if (ec) m_fileSize = 0;
 
     pdal::Options options;
-    options.add("filename", utf8PathStr);
+    options.add("filename", m_utf8FilePath);
 
     pdal::LasReader reader;
     reader.setOptions(options);
@@ -24,14 +28,20 @@ PointCloudObject::PointCloudObject(
     if (pointCount == 0)
         throw std::runtime_error("the Point Cloud data is empty!");
 
-    m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", utf8PathStr));
-    m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr, m_fileManager.get());
-
+    m_pointCount = info.m_pointCount;
     m_localOffset = glm::dvec3(
         (info.m_bounds.minx + info.m_bounds.maxx) * 0.5,
         (info.m_bounds.miny + info.m_bounds.maxy) * 0.5,
         (info.m_bounds.minz + info.m_bounds.maxz) * 0.5
     );
+    m_terrainSize = glm::dvec3(
+        info.m_bounds.maxx - info.m_bounds.minx,
+        info.m_bounds.maxy - info.m_bounds.miny,
+        info.m_bounds.maxz - info.m_bounds.minz
+    );
+
+    m_fileManager = std::make_unique<PointCloudFileManager>(std::format("{}_temp.bin", m_utf8FilePath));
+    m_bufferManager = std::make_unique<PointCloudBufferManager>(device, allocator, transferMgr, m_fileManager.get());
 
     glm::vec3 min{ (float)(info.m_bounds.minx - m_localOffset.x), (float)(info.m_bounds.miny - m_localOffset.y), (float)(info.m_bounds.minz - m_localOffset.z) };
     glm::vec3 max{ (float)(info.m_bounds.maxx - m_localOffset.x), (float)(info.m_bounds.maxy - m_localOffset.y), (float)(info.m_bounds.maxz - m_localOffset.z) };
@@ -114,6 +124,18 @@ void PointCloudObject::draw(const Frustum& frustum, glm::vec3 cameraPos, VkComma
     }
 }
 
-Bound3D PointCloudObject::getTotalBounds() const {
-    return m_octree->getTotalBounds();
+const std::string& PointCloudObject::getFilePath() const {
+    return m_utf8FilePath;
+}
+
+const std::uintmax_t PointCloudObject::getFileSize() const {
+    return m_fileSize;
+}
+
+const glm::dvec3& PointCloudObject::getLocalOffset() const {
+    return m_localOffset;
+}
+
+const glm::dvec3& PointCloudObject::getTerrainSize() const {
+    return m_terrainSize;
 }

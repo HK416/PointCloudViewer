@@ -98,10 +98,6 @@ void OctreeNode::getVisibleChunks(
             child->getVisibleChunks(frustum, localCameraPos, outChunks);
 }
 
-Bound3D OctreeNode::getBounds() const {
-    return m_bound;
-}
-
 int OctreeNode::getOctantIndex(const glm::vec3& position) const {
     glm::vec3 center = m_bound.getCenter();
 
@@ -199,8 +195,4 @@ void Octree::getVisibleChunks(
 ) {
     if (m_root)
         m_root->getVisibleChunks(frustum, localCameraPos, outChunks);
-}
-
-Bound3D Octree::getTotalBounds() const {
-    return m_root->getBounds();
 }

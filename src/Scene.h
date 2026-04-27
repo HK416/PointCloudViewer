@@ -16,6 +16,14 @@ public:
 };
 
 class MainScene : public Scene {
+private:
+    struct UniformBufferData {
+        float pointSize;
+        float minZ;
+        float maxZ;
+        long viewMode;
+    };
+
 public:
     MainScene() = delete;
     MainScene(const MainScene&) = delete;
@@ -55,6 +63,14 @@ private:
     bool m_rightMouseDown = false;
     POINT m_capturedMousePos{0, 0};
 
+    VkBuffer m_uniformBuffer = VK_NULL_HANDLE;
+    VmaAllocation m_uniformAllocation = VK_NULL_HANDLE;
+    void* m_uniformMapped = nullptr;
+
+    VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
+
     VkRect2D m_scissor;
     VkViewport m_viewport;
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
@@ -66,4 +82,7 @@ private:
     bool m_wasLoading = false;
     std::atomic<bool> m_isLoading{false};
     std::future<std::unique_ptr<PointCloudObject>> m_loadingFuture;
+
+    float m_pointSize = 2.0f;
+    int m_viewMode = 0;
 };

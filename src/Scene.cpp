@@ -42,6 +42,12 @@ MainScene::~MainScene() {
         vkDestroyPipeline(m_device, m_graphicsPipeline, VK_NULL_HANDLE);
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, VK_NULL_HANDLE);
     }
+
+    if (m_device) {
+        if (m_descriptorSet) vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+        if (m_descriptorSetLayout) vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+        if (m_uniformBuffer) vmaDestroyBuffer(m_allocator, m_uniformBuffer, m_uniformAllocation);
+    }
 }
 
 std::vector<uint32_t> readFile(const std::string& filename) {
@@ -81,6 +87,78 @@ void MainScene::buildPipeline(VkDevice device) {
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);
 
+    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfoDS = {};
+    layoutInfoDS.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfoDS.bindingCount = 1;
+    layoutInfoDS.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfoDS, nullptr, &m_descriptorSetLayout)) {
+        throw std::runtime_error("Failed to create descriptor set layout!");
+    }
+
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = sizeof(UniformBufferData);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo vmaAllocInfo;
+    if (vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &m_uniformBuffer, &m_uniformAllocation, &vmaAllocInfo) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create uniform buffer!");
+    }
+    m_uniformMapped = vmaAllocInfo.pMappedData;
+
+    VkDescriptorPoolSize poolSize = {};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create descriptor pool!");
+    }
+
+    VkDescriptorSetAllocateInfo dsAllocInfo = {};
+    dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsAllocInfo.descriptorPool = m_descriptorPool;
+    dsAllocInfo.descriptorSetCount = 1;
+    dsAllocInfo.pSetLayouts = &m_descriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(device, &dsAllocInfo, &m_descriptorSet) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate descriptor sets!");
+    }
+
+    VkDescriptorBufferInfo dbi = {};
+    dbi.buffer = m_uniformBuffer;
+    dbi.offset = 0;
+    dbi.range = sizeof(UniformBufferData);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_descriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &dbi;
+
+    vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+
     VkPipelineShaderStageCreateInfo shaderStages[2] = {};
     shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -99,6 +177,8 @@ void MainScene::buildPipeline(VkDevice device) {
 
     VkPipelineLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &m_descriptorSetLayout;
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -201,8 +281,8 @@ void MainScene::onUpdate(float elapsedTimeSec) {
         if (m_loadingFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             try {
                 m_pointCloud = m_loadingFuture.get();
-                Bound3D bounds = m_pointCloud->getTotalBounds();
-                m_camera.m_position = bounds.getCenter();
+                m_camera.m_position = glm::vec3(0.0f);
+                m_camera.m_rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             }
             catch (const std::exception& e) {
                 ATL::CA2T msg(e.what());
@@ -256,14 +336,15 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
     vkCmdSetScissor(commandBuffer, 0, 1, &m_scissor);
 
     ImGui::NewFrame();
+
     if (m_isLoading && !m_wasLoading) {
         ImGui::OpenPopup("Loading Modal");
     }
     m_wasLoading = m_isLoading;
 
-    ImGuiWindowFlags modalFlags = ImGuiWindowFlags_AlwaysAutoResize |
-                                  ImGuiWindowFlags_NoMove |
-                                  ImGuiWindowFlags_NoCollapse;
+    ImGuiWindowFlags modalFlags =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -279,6 +360,37 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
         ImGui::EndPopup();
     }
 
+    ImGuiWindowFlags infoFlags = ImGuiWindowFlags_AlwaysAutoResize |
+                                 ImGuiWindowFlags_NoTitleBar |
+                                 ImGuiWindowFlags_NoMove;
+
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Viewer Info", nullptr, infoFlags);
+
+    if (m_pointCloud) {
+        ImGui::Text("%s", m_pointCloud->getFilePath());
+        ImGui::Text("File Size: %.2f MB", m_pointCloud->getFileSize() / (1024.0f * 1024.0f));
+
+        const auto& size = m_pointCloud->getTerrainSize();
+        ImGui::Text("Terrain Size: %.1f x %.1f x %.1f", size.x, size.y, size.z);
+    } else {
+        ImGui::Text("None");
+        ImGui::Text("File Size: 0 MB");
+        ImGui::Text("Terrain Size: 0 x 0 x 0");
+    }
+
+    ImGui::Separator();
+    
+    const auto& pos = m_camera.m_position;
+    ImGui::Text("Position: X: %.2f, Y: %.2f, Z: %.2f", pos.x, pos.y, pos.z);
+    ImGui::SliderFloat("Point Size", &m_pointSize, 1.0f, 10.0f);
+
+    ImGui::Separator();
+
+    ImGui::RadioButton("Color Map", &m_viewMode, 0); ImGui::SameLine();
+    ImGui::RadioButton("Height Map", &m_viewMode, 1);
+
+    ImGui::End();
     ImGui::Render();
 
     if (m_pipelineLayout == VK_NULL_HANDLE)
@@ -289,6 +401,15 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
     }
 
     if (m_pointCloud) {
+        UniformBufferData ubo{};
+        ubo.pointSize = m_pointSize;
+        const auto& center = m_pointCloud->getLocalOffset();
+        const auto& size = m_pointCloud->getTerrainSize();
+        ubo.minZ = center.z - size.z;
+        ubo.maxZ = center.z + size.z;
+        ubo.viewMode = m_viewMode;
+        memcpy(m_uniformMapped, &ubo, sizeof(ubo));
+
         // Push Constants for Matrices
         glm::mat4 model = glm::translate(glm::mat4(1.0f), m_pointCloud->m_position) *
                           glm::mat4_cast(m_pointCloud->m_rotation) *
@@ -305,8 +426,8 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
         glm::mat4 mvp = vp * model;
 
         Frustum frustum(mvp);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-
         m_pointCloud->draw(frustum, m_camera.m_position, commandBuffer);
     }
 }

@@ -34,8 +34,6 @@ public:
         std::vector<ChunkRenderInfo>& outChunks
     );
 
-    Bound3D getBounds() const;
-
 private:
     int getOctantIndex(const glm::vec3& position) const;
     void createChild(int index);
@@ -75,8 +73,6 @@ public:
         glm::vec3 localCameraPos,
         std::vector<ChunkRenderInfo>& outChunks
     );
-    
-    Bound3D getTotalBounds() const;
 
 private:
     PointCloudFileManager* m_fileManager;
