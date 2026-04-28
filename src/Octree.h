@@ -28,6 +28,7 @@ public:
     void flushRemainingToDisk();
     ChunkSpan getChunkData() const;
 
+    void getAllBounds(std::vector<Bound3D>& outBounds) const;
     void getVisibleChunks(
         const Frustum& frustum,
         glm::vec3 localCameraPos,
@@ -68,6 +69,7 @@ public:
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
 
+    void getAllBounds(std::vector<Bound3D>& outBounds) const;
     void getVisibleChunks(
         const Frustum& frustum,
         glm::vec3 localCameraPos,

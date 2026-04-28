@@ -85,4 +85,5 @@ private:
 
     float m_pointSize = 2.0f;
     int m_viewMode = 0;
+    bool m_showDebugView = false;
 };

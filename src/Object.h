@@ -39,6 +39,8 @@ public:
     PointCloudObject(const std::filesystem::path& filePath, VkDevice device, VmaAllocator allocator, TransferManager* transferMgr);
 
 public:
+    void getAllBounds(std::vector<Bound3D>& outBounds) const;
+
     void updateBufferState();
     void draw(const Frustum& frustum, glm::vec3 cameraPos, VkCommandBuffer commandBuffer) const;
 

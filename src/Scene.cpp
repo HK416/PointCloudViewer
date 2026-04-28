@@ -332,9 +332,7 @@ void MainScene::onUpdate(float elapsedTimeSec) {
 }
 
 void MainScene::onDraw(VkCommandBuffer commandBuffer) {
-    vkCmdSetViewport(commandBuffer, 0, 1, &m_viewport);
-    vkCmdSetScissor(commandBuffer, 0, 1, &m_scissor);
-
+    // --- [GUI] ---
     ImGui::NewFrame();
 
     if (m_isLoading && !m_wasLoading) {
@@ -390,8 +388,10 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
     ImGui::RadioButton("Color Map", &m_viewMode, 0); ImGui::SameLine();
     ImGui::RadioButton("Height Map", &m_viewMode, 1);
 
+    ImGui::Separator();
+    ImGui::Checkbox("Show Debug View", &m_showDebugView);
+
     ImGui::End();
-    ImGui::Render();
 
     if (m_pipelineLayout == VK_NULL_HANDLE)
         return;
@@ -415,21 +415,108 @@ void MainScene::onDraw(VkCommandBuffer commandBuffer) {
                           glm::mat4_cast(m_pointCloud->m_rotation) *
                           glm::scale(glm::mat4(1.0f), m_pointCloud->m_scale);
 
+        // --- [Main Viewport] ---
+        vkCmdSetViewport(commandBuffer, 0, 1, &m_viewport);
+        vkCmdSetScissor(commandBuffer, 0, 1, &m_scissor);
+
         glm::vec3 forward = glm::normalize(m_camera.m_rotation * glm::vec3(0.0f, 0.0f, -1.0f));
         glm::vec3 up = glm::normalize(m_camera.m_rotation * glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 viewMat = glm::lookAt(m_camera.m_position, m_camera.m_position + forward, up);
+        glm::mat4 viewMain = glm::lookAt(m_camera.m_position, m_camera.m_position + forward, up);
+        glm::mat4 projMain = glm::perspective(glm::radians(m_camera.m_fov), m_viewport.width / m_viewport.height, m_camera.m_near, m_camera.m_far);
+        projMain[1][1] *= -1; // Vulkan Y is down
+        
+        glm::mat4 mvpMain = projMain * viewMain * model;
+        Frustum mainFrustum(mvpMain);
 
-        glm::mat4 projMat = glm::perspective(glm::radians(m_camera.m_fov), m_viewport.width / m_viewport.height, m_camera.m_near, m_camera.m_far);
-        projMat[1][1] *= -1; // Vulkan Y is down
-
-        glm::mat4 vp = projMat * viewMat;
-        glm::mat4 mvp = vp * model;
-
-        Frustum frustum(mvp);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
-        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-        m_pointCloud->draw(frustum, m_camera.m_position, commandBuffer);
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvpMain);
+        m_pointCloud->draw(mainFrustum, m_camera.m_position, commandBuffer);
+
+        // --- [Debug Viewport] ---
+        if (m_showDebugView) {
+            float pipW = m_viewport.width / 2.0f;
+            float pipH = m_viewport.height / 2.0f;
+            float pipX = m_viewport.width - pipW - 20.0f;
+            float pipY = m_viewport.height - pipH - 20.0f;
+
+            VkViewport pipViewport{pipX, pipY, pipW, pipH, 0.0f, 1.0f};
+            VkRect2D pipScissor{{(int32_t)pipX, (int32_t)pipY}, {(uint32_t)pipW, (uint32_t)pipH}};
+
+            VkClearAttachment clearDepth = {};
+            clearDepth.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            clearDepth.clearValue.depthStencil = {1.0f, 0};
+            VkClearRect clearRect = {};
+            clearRect.rect = pipScissor;
+            clearRect.baseArrayLayer = 0;
+            clearRect.layerCount = 1;
+            vkCmdClearAttachments(commandBuffer, 1, &clearDepth, 1, &clearRect);
+
+            vkCmdSetViewport(commandBuffer, 0, 1, &pipViewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &pipScissor);
+            
+            float maxDim = std::max({size.x, size.y, size.z});
+            float dist = maxDim;
+            glm::mat4 viewPip = glm::lookAt(glm::vec3(dist, dist, dist), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::mat4 projPip = glm::perspective(glm::radians(60.0f), pipW / pipH, 0.1f, dist * 5.0f);
+            projPip[1][1] *= -1.0f;
+
+            glm::mat4 mvpPip = projPip * viewPip * model;
+
+            vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvpPip);
+            m_pointCloud->draw(mainFrustum, m_camera.m_position, commandBuffer);
+
+            // --- [Octree Chunks] ---
+            ImDrawList* drawList = ImGui::GetForegroundDrawList();
+            auto projectToPip = [&](const glm::vec3& worldPos, ImVec2& outScreen) -> bool {
+                glm::vec4 clip = mvpPip * glm::vec4(worldPos, 1.0f);
+                if (clip.w < 0.1f) 
+                    return false;
+
+                glm::vec3 ndc = glm::vec3(clip) / clip.w;
+                outScreen.x = pipX + (ndc.x * 0.5f + 0.5f) * pipW;
+                outScreen.y = pipY + (ndc.y * 0.5f + 0.5f) * pipH;
+                return true;
+            };
+
+            auto drawBox = [&](const Bound3D& b, ImU32 color) {
+                glm::vec3 corners[8] = {
+                    {b.min.x, b.min.y, b.min.z}, 
+                    {b.max.x, b.min.y, b.min.z},
+                    {b.max.x, b.max.y, b.min.z},
+                    {b.min.x, b.max.y, b.min.z},
+                    {b.min.x, b.min.y, b.max.z},
+                    {b.max.x, b.min.y, b.max.z},
+                    {b.max.x, b.max.y, b.max.z},
+                    {b.min.x, b.max.y, b.max.z}
+                };
+
+                ImVec2 pts[8];
+                for (int i = 0; i < 8; ++i) {
+                    if (!projectToPip(corners[i], pts[i]))
+                        return;
+                }
+
+                int edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6}, {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+                for (int i = 0; i < 12; ++i) {
+                    drawList->AddLine(pts[edges[i][0]], pts[edges[i][1]], color, 1.0f);
+                }
+            };
+
+            std::vector<Bound3D> allBounds;
+            m_pointCloud->getAllBounds(allBounds);
+
+            drawList->AddRectFilled(ImVec2(pipX, pipY), ImVec2(pipX + pipW, pipY + pipH), IM_COL32(0, 0, 0, 150));
+            drawList->AddRect(ImVec2(pipX, pipY), ImVec2(pipX + pipW, pipY + pipH), IM_COL32(255, 255, 255, 255));
+
+            for (const auto& bound : allBounds) {
+                if (mainFrustum.intersects(bound))
+                    drawBox(bound, IM_COL32(0, 255, 0, 200));
+                else 
+                    drawBox(bound, IM_COL32(255, 0, 0, 100));
+            }
+        }
     }
+    ImGui::Render();
 }
 
 void MainScene::onResize(LONG width, LONG height) {

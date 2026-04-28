@@ -80,6 +80,10 @@ PointCloudObject::PointCloudObject(
     m_rotation = glm::quat(glm::vec3(glm::radians(-90.0f), 0.0f, 0.0f));
 }
 
+void PointCloudObject::getAllBounds(std::vector<Bound3D>& outBounds) const {
+    if (m_octree) m_octree->getAllBounds(outBounds);
+}
+
 void PointCloudObject::updateBufferState() {
     if (m_bufferManager) {
         m_bufferManager->updateBufferState();

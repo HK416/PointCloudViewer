@@ -76,6 +76,13 @@ ChunkSpan OctreeNode::getChunkData() const {
     return m_chunkSpan;
 }
 
+void OctreeNode::getAllBounds(std::vector<Bound3D>& outBounds) const {
+    outBounds.push_back(m_bound);
+    for (const auto& child : m_children) {
+        if (child) child->getAllBounds(outBounds);
+    }
+}
+
 void OctreeNode::getVisibleChunks(
     const Frustum& frustum,
     glm::vec3 localCameraPos,
@@ -186,6 +193,10 @@ void Octree::insert(const PointCloudVertex& p) {
 void Octree::flushRemainingToDisk() {
     if (m_root)
         m_root->flushRemainingToDisk();
+}
+
+void Octree::getAllBounds(std::vector<Bound3D>& outBounds) const {
+    if (m_root) m_root->getAllBounds(outBounds);
 }
 
 void Octree::getVisibleChunks(
