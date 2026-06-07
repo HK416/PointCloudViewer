@@ -11,30 +11,49 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Application.cpp" />
-    <ClCompile Include="Buffer.cpp" />
-    <ClCompile Include="FileManager.cpp" />
-    <ClCompile Include="Frustum.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="Object.cpp" />
-    <ClCompile Include="Octree.cpp" />
-    <ClCompile Include="Scene.cpp" />
-    <ClCompile Include="TransferManager.cpp" />
+    <ClCompile Include="Core\stdafx.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Core\Application.cpp" />
+    <ClCompile Include="Render\Buffer.cpp" />
+    <ClCompile Include="Utils\FileManager.cpp" />
+    <ClCompile Include="Scene\Frustum.cpp" />
+    <ClCompile Include="Core\main.cpp" />
+    <ClCompile Include="Scene\Object.cpp" />
+    <ClCompile Include="Scene\Octree.cpp" />
+    <ClCompile Include="Scene\Scene.cpp" />
+    <ClCompile Include="Render\TransferManager.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Application.h" />
-    <ClInclude Include="Buffer.h" />
-    <ClInclude Include="FileManager.h" />
-    <ClInclude Include="Frustum.h" />
-    <ClInclude Include="Object.h" />
-    <ClInclude Include="Octree.h" />
-    <ClInclude Include="Scene.h" />
-    <ClInclude Include="stdafx.h" />
-    <ClInclude Include="TransferManager.h" />
+    <ClInclude Include="Core\Application.h" />
+    <ClInclude Include="Render\Buffer.h" />
+    <ClInclude Include="Utils\FileManager.h" />
+    <ClInclude Include="Scene\Frustum.h" />
+    <ClInclude Include="Scene\Object.h" />
+    <ClInclude Include="Scene\Octree.h" />
+    <ClInclude Include="Scene\Scene.h" />
+    <ClInclude Include="Core\stdafx.h" />
+    <ClInclude Include="Render\TransferManager.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="frag.glsl" />
-    <None Include="vert.glsl" />
+    <CustomBuild Include="Shaders\point.frag">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\point.vert">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+    </CustomBuild>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
@@ -81,8 +100,10 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ATL_CSTRING_EXPLICIT_CONSTRUCTORS;VK_USE_PLATFORM_WIN32_KHR;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>Core/stdafx.h</PrecompiledHeaderFile>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -99,6 +120,9 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;_ATL_CSTRING_EXPLICIT_CONSTRUCTORS;VK_USE_PLATFORM_WIN32_KHR;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>Core/stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

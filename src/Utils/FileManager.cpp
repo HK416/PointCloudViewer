@@ -1,5 +1,5 @@
-#include "stdafx.h"
-#include "FileManager.h"
+#include "Core/stdafx.h"
+#include "Utils/FileManager.h"
 
 PointCloudFileManager::PointCloudFileManager(const std::string& filePath) {
     m_dataFile.open(filePath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);

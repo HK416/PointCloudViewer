@@ -503,3 +503,6 @@ vcpkg_installed/
 
 # ImGui
 imgui.ini
+
+# SPIR-V
+*.spv

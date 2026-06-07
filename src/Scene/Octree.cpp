@@ -1,6 +1,6 @@
-#include "stdafx.h"
-#include "Octree.h"
-#include "Frustum.h"
+#include "Core/stdafx.h"
+#include "Scene/Octree.h"
+#include "Scene/Frustum.h"
 
 glm::vec3 Bound3D::getCenter() const {
     return 0.5f * (min + max);

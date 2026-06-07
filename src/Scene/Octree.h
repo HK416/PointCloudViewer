@@ -1,6 +1,6 @@
 #pragma once
-#include "Buffer.h"
-#include "FileManager.h"
+#include "Render/Buffer.h"
+#include "Utils/FileManager.h"
 
 struct Frustum;
 

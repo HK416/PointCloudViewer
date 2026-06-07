@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Scene.h"
-#include "TransferManager.h"
+#include "Scene/Scene.h"
+#include "Render/TransferManager.h"
 
 class Application {
 public:

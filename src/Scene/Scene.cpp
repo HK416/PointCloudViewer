@@ -1,8 +1,8 @@
-#include "stdafx.h"
-#include "Scene.h"
-#include "Buffer.h"
-#include "Frustum.h"
-#include "Octree.h"
+#include "Core/stdafx.h"
+#include "Scene/Scene.h"
+#include "Render/Buffer.h"
+#include "Scene/Frustum.h"
+#include "Scene/Octree.h"
 
 MainScene::MainScene(
     HWND hWnd,
@@ -81,8 +81,8 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<uint32_t>& 
 
 void MainScene::buildPipeline(VkDevice device) {
     // 1. Load SPIR-V Shaders from files
-    auto vertShaderCode = readFile("vert.spv");
-    auto fragShaderCode = readFile("frag.spv");
+    auto vertShaderCode = readFile("Shaders/point.vert.spv");
+    auto fragShaderCode = readFile("Shaders/point.frag.spv");
 
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);

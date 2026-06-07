@@ -1,5 +1,5 @@
-#include "stdafx.h"
-#include "TransferManager.h"
+#include "Core/stdafx.h"
+#include "Render/TransferManager.h"
 
 TransferManager::TransferManager(VkDevice device, uint32_t queueFamilyIndex, VkQueue queue) 
     : m_device(device), m_queue(queue) {

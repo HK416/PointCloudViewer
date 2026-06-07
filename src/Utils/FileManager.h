@@ -1,5 +1,5 @@
 #pragma once
-#include "Buffer.h"
+#include "Render/Buffer.h"
 
 struct ChunkSpan {
     size_t offsetBytes = 0;

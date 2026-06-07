@@ -21,10 +21,10 @@ public:
 
     void garbageCollect();
 
-    // 전송을 요청하고 완료 식별값(Timeline Value)을 반환
+    // ?�송???�청?�고 ?�료 ?�별�?Timeline Value)??반환
     uint64_t requestTransfer(const std::vector<BufferCopyRequest>& requests);
     
-    // 특정 전송이 완료되었는지 확인
+    // ?�정 ?�송???�료?�었?��? ?�인
     bool isFinished(uint64_t value);
 
 

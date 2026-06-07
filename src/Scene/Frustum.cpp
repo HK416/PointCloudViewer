@@ -1,6 +1,6 @@
-#include "stdafx.h"
-#include "Frustum.h"
-#include "Octree.h"
+#include "Core/stdafx.h"
+#include "Scene/Frustum.h"
+#include "Scene/Octree.h"
 
 void Plane::normalize() {
     float length = glm::length(normal);
@@ -47,7 +47,7 @@ Frustum::Frustum(const glm::mat4& vp) {
 
 bool Frustum::intersects(const Bound3D& bound) const {
     for (int i = 0; i < 6; i++) {
-        // 평면의 법선(normal) 방향을 기준으로 가장 가까운 점을 찾습니다.
+        // ?�면??법선(normal) 방향??기�??�로 가??가까운 ?�을 찾습?�다.
         glm::vec3 p = bound.min;
         if (planes[i].normal.x >= 0)
             p.x = bound.max.x;
@@ -56,7 +56,7 @@ bool Frustum::intersects(const Bound3D& bound) const {
         if (planes[i].normal.z >= 0)
             p.z = bound.max.z;
 
-        // 점이 평면 바깥에 있다면 이 박스는 시야 밖입니다.
+        // ?�이 ?�면 바깥???�다�???박스???�야 밖입?�다.
         if (glm::dot(planes[i].normal, p) + planes[i].distance < 0.0f) {
             return false;
         }

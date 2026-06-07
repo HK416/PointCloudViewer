@@ -1,8 +1,8 @@
-#include "stdafx.h"
-#include "Object.h"
-#include "Buffer.h"
-#include "Octree.h"
-#include "Frustum.h"
+#include "Core/stdafx.h"
+#include "Scene/Object.h"
+#include "Render/Buffer.h"
+#include "Scene/Octree.h"
+#include "Scene/Frustum.h"
 
 PointCloudObject::PointCloudObject(
     const std::filesystem::path& filePath,

@@ -1,9 +1,5 @@
-#include "stdafx.h"
-
-#define VMA_IMPLEMENTATION
-#include <vma/vk_mem_alloc.h>
-
-#include "Application.h"
+#include "Core/stdafx.h"
+#include "Core/Application.h"
 
 LPCWSTR CLASS_NAME = L"PointCloudViewer";
 

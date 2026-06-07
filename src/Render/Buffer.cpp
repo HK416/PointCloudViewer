@@ -1,8 +1,8 @@
-#include "stdafx.h"
-#include "Buffer.h"
-#include "Octree.h"
-#include "FileManager.h"
-#include "TransferManager.h"
+#include "Core/stdafx.h"
+#include "Render/Buffer.h"
+#include "Scene/Octree.h"
+#include "Utils/FileManager.h"
+#include "Render/TransferManager.h"
 
 PointCloudBuffer::PointCloudBuffer(
     VkDevice device,
