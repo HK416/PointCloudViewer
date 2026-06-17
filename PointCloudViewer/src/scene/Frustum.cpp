@@ -1,6 +1,6 @@
-#include "Core/stdafx.h"
-#include "Scene/Frustum.h"
-#include "Scene/Octree.h"
+#include "stdafx.h"
+#include "Frustum.h"
+#include "Octree.h"
 
 void Plane::normalize() {
     float length = glm::length(normal);
@@ -9,32 +9,32 @@ void Plane::normalize() {
 }
 
 Frustum::Frustum(const glm::mat4& vp) {
-    // Left
+    // 좌측 평면
     planes[0].normal.x = vp[0][3] + vp[0][0];
     planes[0].normal.y = vp[1][3] + vp[1][0];
     planes[0].normal.z = vp[2][3] + vp[2][0];
     planes[0].distance = vp[3][3] + vp[3][0];
-    // Right
+    // 우측 평면
     planes[1].normal.x = vp[0][3] - vp[0][0];
     planes[1].normal.y = vp[1][3] - vp[1][0];
     planes[1].normal.z = vp[2][3] - vp[2][0];
     planes[1].distance = vp[3][3] - vp[3][0];
-    // Bottom
+    // 하단 평면
     planes[2].normal.x = vp[0][3] + vp[0][1];
     planes[2].normal.y = vp[1][3] + vp[1][1];
     planes[2].normal.z = vp[2][3] + vp[2][1];
     planes[2].distance = vp[3][3] + vp[3][1];
-    // Top
+    // 상단 평면
     planes[3].normal.x = vp[0][3] - vp[0][1];
     planes[3].normal.y = vp[1][3] - vp[1][1];
     planes[3].normal.z = vp[2][3] - vp[2][1];
     planes[3].distance = vp[3][3] - vp[3][1];
-    // Near (Vulkan Clip Space: 0 to w)
+    // 근거리 평면 (Vulkan 클립 공간: 0 ~ w)
     planes[4].normal.x = vp[0][2];
     planes[4].normal.y = vp[1][2];
     planes[4].normal.z = vp[2][2];
     planes[4].distance = vp[3][2];
-    // Far
+    // 원거리 평면
     planes[5].normal.x = vp[0][3] - vp[0][2];
     planes[5].normal.y = vp[1][3] - vp[1][2];
     planes[5].normal.z = vp[2][3] - vp[2][2];
@@ -47,7 +47,6 @@ Frustum::Frustum(const glm::mat4& vp) {
 
 bool Frustum::intersects(const Bound3D& bound) const {
     for (int i = 0; i < 6; i++) {
-        // ?�면??법선(normal) 방향??기�??�로 가??가까운 ?�을 찾습?�다.
         glm::vec3 p = bound.min;
         if (planes[i].normal.x >= 0)
             p.x = bound.max.x;
@@ -56,10 +55,10 @@ bool Frustum::intersects(const Bound3D& bound) const {
         if (planes[i].normal.z >= 0)
             p.z = bound.max.z;
 
-        // ?�이 ?�면 바깥???�다�???박스???�야 밖입?�다.
         if (glm::dot(planes[i].normal, p) + planes[i].distance < 0.0f) {
             return false;
         }
     }
     return true;
 }
+

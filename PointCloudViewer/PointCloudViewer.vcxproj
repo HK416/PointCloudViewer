@@ -11,29 +11,33 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Core\stdafx.cpp">
+    <ClCompile Include="src\graphics\Renderer.cpp" />
+    <ClCompile Include="src\core\stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="Core\Application.cpp" />
-    <ClCompile Include="Render\Buffer.cpp" />
-    <ClCompile Include="Utils\FileManager.cpp" />
-    <ClCompile Include="Scene\Frustum.cpp" />
-    <ClCompile Include="Core\main.cpp" />
-    <ClCompile Include="Scene\Object.cpp" />
-    <ClCompile Include="Scene\Octree.cpp" />
-    <ClCompile Include="Scene\Scene.cpp" />
-    <ClCompile Include="Render\TransferManager.cpp" />
+    <ClCompile Include="src\core\Application.cpp" />
+    <ClCompile Include="src\graphics\PointCloudManager.cpp" />
+    <ClCompile Include="src\utils\FileManager.cpp" />
+    <ClCompile Include="src\scene\Frustum.cpp" />
+    <ClCompile Include="src\core\main.cpp" />
+    <ClCompile Include="src\scene\Object.cpp" />
+    <ClCompile Include="src\scene\Octree.cpp" />
+    <ClCompile Include="src\scene\Scene.cpp" />
+    <ClCompile Include="src\graphics\TransferManager.cpp" />
+    <ClCompile Include="src\scene\Transform.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Core\Application.h" />
-    <ClInclude Include="Render\Buffer.h" />
-    <ClInclude Include="Utils\FileManager.h" />
-    <ClInclude Include="Scene\Frustum.h" />
-    <ClInclude Include="Scene\Object.h" />
-    <ClInclude Include="Scene\Octree.h" />
-    <ClInclude Include="Scene\Scene.h" />
-    <ClInclude Include="Core\stdafx.h" />
-    <ClInclude Include="Render\TransferManager.h" />
+    <ClInclude Include="src\graphics\Renderer.h" />
+    <ClInclude Include="src\core\Application.h" />
+    <ClInclude Include="src\graphics\PointCloudManager.h" />
+    <ClInclude Include="src\utils\FileManager.h" />
+    <ClInclude Include="src\scene\Frustum.h" />
+    <ClInclude Include="src\scene\Object.h" />
+    <ClInclude Include="src\scene\Octree.h" />
+    <ClInclude Include="src\scene\Scene.h" />
+    <ClInclude Include="src\core\stdafx.h" />
+    <ClInclude Include="src\graphics\TransferManager.h" />
+    <ClInclude Include="src\scene\Transform.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\point.frag">
@@ -68,7 +72,6 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfAtl>Static</UseOfAtl>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -76,7 +79,6 @@
     <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfAtl>Static</UseOfAtl>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -96,19 +98,19 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_ATL_CSTRING_EXPLICIT_CONSTRUCTORS;VK_USE_PLATFORM_WIN32_KHR;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>Core/stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)src\graphics;$(ProjectDir)src\scene;$(ProjectDir)src\utils;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;User32.lib;Gdi32.lib;Shell32.lib;vulkan-1.lib;ole32.lib;oleaut32.lib;atls.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -116,18 +118,19 @@
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_ATL_CSTRING_EXPLICIT_CONSTRUCTORS;VK_USE_PLATFORM_WIN32_KHR;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>Core/stdafx.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)src\graphics;$(ProjectDir)src\scene;$(ProjectDir)src\utils;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;User32.lib;Gdi32.lib;Shell32.lib;vulkan-1.lib;ole32.lib;oleaut32.lib;atls.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

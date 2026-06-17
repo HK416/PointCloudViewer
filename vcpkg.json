@@ -1,17 +1,33 @@
 {
-    "name": "point-cloud-viewer",
-    "version": "1.0.0",
-    "dependencies": [
-      "pdal",
-      "vulkan",
-      "glm",
-      "vulkan-memory-allocator",
-      {
-        "name": "imgui",
-        "features": [
-          "vulkan-binding",
-          "win32-binding"
-        ]
-      }
-    ]
+  "name": "point-cloud-viewer",
+  "version": "1.0.0",
+  "builtin-baseline": "e7d511847f12658e9bd196b29b223144e3f2f091",
+  "dependencies": [
+    "tinyply",
+    "laszip",
+    "vulkan-headers",
+    "vulkan-memory-allocator",
+    "portable-file-dialogs",
+    "spdlog",
+    "glfw3",
+    "glm",
+    {
+      "name": "imgui",
+      "features": [
+        "vulkan-binding",
+        "glfw-binding",
+        "freetype"
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "name": "vulkan-loader",
+      "version": "1.3.296.0"
+    },
+    {
+      "name": "vulkan-headers",
+      "version": "1.3.296.0"
+    }
+  ]
 }

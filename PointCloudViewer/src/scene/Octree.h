@@ -1,6 +1,6 @@
 #pragma once
-#include "Render/Buffer.h"
-#include "Utils/FileManager.h"
+#include "PointCloudManager.h"
+#include "FileManager.h"
 
 struct Frustum;
 
@@ -22,10 +22,14 @@ class OctreeNode {
 public:
     OctreeNode() = delete;
     OctreeNode(const OctreeNode&) = delete;
+    OctreeNode& operator=(const OctreeNode&) = delete;
+
     OctreeNode(uint64_t id, Bound3D bound, PointCloudFileManager* fileManager);
+    ~OctreeNode() = default;
 
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
+    size_t flushToDiskTemporary();
     ChunkSpan getChunkData() const;
 
     void getAllBounds(std::vector<Bound3D>& outBounds) const;
@@ -43,40 +47,49 @@ private:
     void splitAndPushDown();
 
 private:
+    PointCloudFileManager* m_fileManager;
+    Bound3D m_bound;
+
     bool m_leafNode = true;
     uint64_t m_id = 0;
     ChunkSpan m_chunkSpan;
-    Bound3D m_bound;
+    std::vector<ChunkSpan> m_chunkSpans;
+    uint32_t m_totalPointCount = 0;
     std::unique_ptr<OctreeNode> m_children[8];
     std::vector<PointCloudVertex> m_points;
-    PointCloudFileManager* m_fileManager;
 
-    std::vector<bool> m_voxelOccupancy;
+    std::vector<uint8_t> m_voxelOccupancy;
     std::vector<PointCloudVertex> m_lodPoints;
 
+    glm::vec3 m_center{0.0f};
+    glm::vec3 m_invVoxelSize{0.0f};
+
 public:
-    static const int GRID_RES = 64;
-    static const int MAX_CAPACITY = GRID_RES * GRID_RES * GRID_RES;
+    static const int gridResolution = 64;
+    static const int maxCapacity = gridResolution * gridResolution * gridResolution;
 };
 
 class Octree {
 public:
     Octree() = delete;
     Octree(const Octree&) = delete;
+    Octree& operator=(const Octree&) = delete;
+
     Octree(PointCloudFileManager* fileManager, Bound3D bound);
+    ~Octree() = default;
 
 public:
     void insert(const PointCloudVertex& p);
     void flushRemainingToDisk();
 
-    void getAllBounds(std::vector<Bound3D>& outBounds) const;
-    void getVisibleChunks(
-        const Frustum& frustum,
-        glm::vec3 localCameraPos,
-        std::vector<ChunkRenderInfo>& outChunks
-    );
+    std::vector<Bound3D> getAllBounds() const;
+    std::vector<ChunkRenderInfo> getVisibleChunks(const Frustum& frustum, const glm::vec3& localCameraPos);
 
 private:
     PointCloudFileManager* m_fileManager;
     std::unique_ptr<OctreeNode> m_root;
+    
+    size_t m_ramPointCount = 0;
+    size_t m_maxRamPoints = 5000000; // 약 160MB 메모리 제한
 };
+

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 struct Bound3D;
 
@@ -16,3 +16,4 @@ struct Frustum {
 
     bool intersects(const Bound3D& bound) const;
 };
+
