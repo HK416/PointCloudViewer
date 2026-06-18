@@ -2,7 +2,9 @@
 
 class RenderContext;
 
+/// @brief CPU에서 GPU로의 데이터 전송(업로드) 명령을 큐에 넣고 비동기적으로 처리하는 관리자 클래스입니다.
 class TransferManager {
+    /// @brief 현재 전송이 진행 중인 커맨드 버퍼와 사용 중인 스테이징 슬롯 정보를 담는 구조체입니다.
     struct InFlightTransfer {
         uint64_t timelineValue;
         VkCommandBuffer commandBuffer;

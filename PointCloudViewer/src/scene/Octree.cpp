@@ -2,6 +2,10 @@
 #include "Octree.h"
 #include "Frustum.h"
 
+//
+// ================ Bound3D ================
+//
+
 glm::vec3 Bound3D::getCenter() const {
     return 0.5f * (min + max);
 }
@@ -9,6 +13,10 @@ glm::vec3 Bound3D::getCenter() const {
 glm::vec3 Bound3D::getSize() const {
     return max - min;
 }
+
+//
+// ================ OctreeNode ================
+//
 
 OctreeNode::OctreeNode(uint64_t id, Bound3D bound, PointCloudFileManager* fileManager) 
     : m_fileManager(fileManager) {
@@ -258,6 +266,10 @@ void OctreeNode::splitAndPushDown() {
         insertIntoChild(p);
     }
 }
+
+//
+// ================ Octree ================
+//
 
 Octree::Octree(PointCloudFileManager* fileManager, Bound3D bound)
     : m_fileManager(fileManager) 

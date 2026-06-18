@@ -2,11 +2,19 @@
 #include "Frustum.h"
 #include "Octree.h"
 
+//
+// ================ Plane ================
+//
+
 void Plane::normalize() {
     float length = glm::length(normal);
     normal /= length;
     distance /= length;
 }
+
+//
+// ================ Frustum ================
+//
 
 Frustum::Frustum(const glm::mat4& vp) {
     // 좌측 평면

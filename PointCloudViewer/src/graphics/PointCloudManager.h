@@ -1,4 +1,6 @@
 #pragma once
+#include "Octree.h"
+#include "PointCloudVertex.h"
 
 struct StreamRequest;
 struct RenderNode;
@@ -6,13 +8,12 @@ class RenderContext;
 class TransferManager;
 class PointCloudFileManager;
 
-struct alignas(16) PointCloudVertex {
-    glm::vec3 position{0.0f};
-    uint32_t _padding0{0};
-    glm::vec3 color{1.0f};
-    uint32_t _padding1{0};
-};
 
+//
+// ================ PointCloudNode ================
+//
+
+/// @brief 옥트리의 각 노드에 대응하며 렌더링에 필요한 포인트 데이터를 관리하는 구조체입니다.
 struct PointCloudNode {
     uint64_t id{UINT64_MAX};
     uint32_t vertexCount{0};
@@ -32,6 +33,11 @@ struct PointCloudNode {
     std::vector<PointCloudVertex> tempVertices;
 };
 
+//
+// ================ FixedSlotAllocator ================
+//
+
+/// @brief 고정된 개수의 슬롯을 관리하고 할당/해제하는 할당기 클래스입니다.
 class FixedSlotAllocator {
 public:
     FixedSlotAllocator() = delete;
@@ -48,19 +54,24 @@ private:
     std::vector<size_t> m_freeSlots;
 };
 
-class GlobalPointCloudManager {
-public:
-    GlobalPointCloudManager() = delete;
-    GlobalPointCloudManager(const GlobalPointCloudManager&) = delete;
-    GlobalPointCloudManager& operator=(const GlobalPointCloudManager&) = delete;
+//
+// ================ PointCloudDataManager ================
+//
 
-    GlobalPointCloudManager(
+/// @brief 스트리밍되는 포인트 클라우드 노드 데이터를 관리하고 GPU 메모리 풀(버퍼)을 제어하는 클래스입니다.
+class PointCloudDataManager {
+public:
+    PointCloudDataManager() = delete;
+    PointCloudDataManager(const PointCloudDataManager&) = delete;
+    PointCloudDataManager& operator=(const PointCloudDataManager&) = delete;
+
+    PointCloudDataManager(
         RenderContext* context,
         TransferManager* transferManager,
         PointCloudFileManager* fileManager,
         size_t maxNodesCapacity
     );
-    ~GlobalPointCloudManager();
+    ~PointCloudDataManager();
 
     void updateStreamingState();
 
@@ -91,8 +102,7 @@ private:
     std::unordered_map<uint64_t, PointCloudNode> m_nodeRegistry;
 
 public:
-    // OctreeNode::maxCapacity (64 * 64 * 64)와 정확히 일치해야 함
-    static const uint32_t maxVerticesPerNode = 262144;
-    static const uint32_t vertexStride = 32;
-    static const uint32_t bytesPerNode = maxVerticesPerNode * vertexStride;
+    static constexpr uint32_t maxVerticesPerNode = OctreeNode::maxCapacity;
+    static constexpr uint32_t vertexStride = sizeof(PointCloudVertex);
+    static constexpr uint32_t bytesPerNode = maxVerticesPerNode * vertexStride;
 };

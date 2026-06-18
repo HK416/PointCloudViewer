@@ -1,12 +1,16 @@
 #include "stdafx.h"
 #include "Object.h"
-#include "../graphics/Renderer.h"
+#include "Renderer.h"
 #include "Frustum.h"
 #include "Octree.h"
-#include "../graphics/PointCloudManager.h"
-#include "../utils/FileManager.h"
+#include "PointCloudManager.h"
+#include "FileManager.h"
+#include "Shader.h"
 
-// ========== 오브젝트 ==========
+//
+// ================ Object ================
+//
+
 Object::~Object() {
     removeParent();
 
@@ -120,18 +124,52 @@ void Object::updateWorldMatrix() {
     m_worldDirty = false;
 }
 
-// ========== 카메라 ==========
+//
+// ================ Camera ================
+//
+
 void Camera::applyToQueue(RenderQueue& queue) {
-    GlobalData data = queue.getGlobalData();
-    data.view = getViewMatrix();
-    data.proj = getProjectionMatrix();
-    data.cameraPos = getTransform().getPosition();
-    queue.setGlobalData(data);
+    queue.setCamera(getViewMatrix(), getProjectionMatrix(), getTransform().getPosition());
 }
 
-// ========== 원근(Perspective) 카메라 ==========
-PerspectiveCamera::PerspectiveCamera() {
+//
+// ================ PerspectiveCamera ================
+//
+
+PerspectiveCamera::PerspectiveCamera(GLFWwindow* window) : m_window(window) {
     setPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+}
+
+void PerspectiveCamera::onUpdate(float elapsedTimeSec) {
+    if (!m_window) return;
+
+    glm::quat rot = m_transform.getRotation();
+    glm::vec3 forwardDir = rot * glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 rightDir = rot * glm::vec3(1.0f, 0.0f, 0.0f);
+
+    glm::vec3 pos = m_transform.getPosition();
+    bool moved = false;
+
+    if (glfwGetKey(m_window, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(m_window, GLFW_KEY_UP) == GLFW_PRESS) {
+        pos += forwardDir * m_moveSpeed * elapsedTimeSec;
+        moved = true;
+    }
+    if (glfwGetKey(m_window, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(m_window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+        pos -= forwardDir * m_moveSpeed * elapsedTimeSec;
+        moved = true;
+    }
+    if (glfwGetKey(m_window, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(m_window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+        pos -= rightDir * m_moveSpeed * elapsedTimeSec;
+        moved = true;
+    }
+    if (glfwGetKey(m_window, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(m_window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+        pos += rightDir * m_moveSpeed * elapsedTimeSec;
+        moved = true;
+    }
+
+    if (moved) {
+        m_transform.setPosition(pos);
+    }
 }
 
 void PerspectiveCamera::setPerspective(
@@ -163,22 +201,17 @@ void PerspectiveCamera::updateWorldMatrix() {
     m_viewMatrix = glm::inverse(m_worldMatrix);
 }
 
-// ========== 포인트 클라우드 오브젝트 ==========
+//
+// ================ PointCloudObject ================
+//
+
 PointCloudObject::PointCloudObject(
-    RenderContext* context, 
+    Shader* shader,
     std::unique_ptr<PointCloudFileManager> fileManager,
     std::unique_ptr<Octree> octree,
-    std::unique_ptr<GlobalPointCloudManager> pointCloudManager,
-    VkPipeline pipeline,
-    VkPipelineLayout pipelineLayout
-) : m_fileManager(std::move(fileManager)),
-    m_octree(std::move(octree)),
-    m_pointCloudManager(std::move(pointCloudManager)),
-    m_pipeline(pipeline), m_pipelineLayout(pipelineLayout) 
-{
-}
-
-PointCloudObject::~PointCloudObject() = default;
+    std::unique_ptr<PointCloudDataManager> pointCloudManager
+) : m_shader(shader), m_fileManager(std::move(fileManager)), m_octree(std::move(octree)),
+      m_pointCloudManager(std::move(pointCloudManager)) {}
 
 void PointCloudObject::render(RenderQueue& queue) {
     const GlobalData& globalData = queue.getGlobalData();
@@ -213,7 +246,11 @@ void PointCloudObject::render(RenderQueue& queue) {
         if (m_pointCloudManager->getRenderNode(chunk.id, node)) {
             node.transform = m_worldMatrix;
             float distance = glm::distance(localCameraPos, chunk.center);
-            queue.submitPointCloud(distance, node, m_pointCloudManager.get(), m_pipeline, m_pipelineLayout);
+            queue.submitPointCloudCmd(
+                PointCloudDrawCmd{
+                    distance, node, m_shader, m_pointCloudManager.get()
+                }
+            );
         }
     }
 

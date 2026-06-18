@@ -1,12 +1,19 @@
 #pragma once
 
+class PointCloudDataManager;
+class Shader;
+
+/// @brief 셰이더에 전역적으로 전달되는 뷰, 투영 행렬 및 카메라 정보를 담는 구조체입니다.
 struct alignas(16) GlobalData {
     glm::mat4 view{1.0f};
     glm::mat4 proj{1.0f};
-    glm::vec3 cameraPos{0.0f, 0.0f, 0.0f};
-    uint32_t _padding{0};
+    alignas(16) glm::vec3 cameraPos{0.0f, 0.0f, 0.0f};
+    float pointSizeMultiplier{100.0f};
+    float pointSizeMin{1.0f};
+    float pointSizeMax{10.0f};
 };
 
+/// @brief Vulkan 인스턴스, 디바이스 등 렌더링에 필요한 핵심 환경을 초기화하고 관리하는 컨텍스트 클래스입니다.
 class RenderContext {
 public:
     RenderContext() = delete;
@@ -54,6 +61,7 @@ private:
     VkDescriptorSetLayout m_globalLayout = VK_NULL_HANDLE;
 };
 
+/// @brief 화면에 이미지를 출력하기 위한 스왑체인과 깊이 버퍼 리소스를 관리하는 클래스입니다.
 class RenderSwapchain {
 public:
     RenderSwapchain() = delete;
@@ -75,6 +83,7 @@ private:
     void createDepthResources(int width, int height);
 
 private:
+    /// @brief 소유하지 않는 클래스 맴버 변수.
     RenderContext* m_context = nullptr;
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
@@ -90,6 +99,7 @@ public:
     static const VkFormat depthImageFormat = VK_FORMAT_D32_SFLOAT;
 };
 
+/// @brief 렌더링 명령을 기록하고 제출하기 위한 커맨드 풀 및 커맨드 버퍼를 관리하는 클래스입니다.
 class CommandManager {
 public:
     CommandManager() = delete;
@@ -107,12 +117,14 @@ private:
     void createCommandBuffers(size_t swapchainImageCount);
 
 private:
+    /// @brief 소유하지 않는 클래스 맴버 변수.
     RenderContext* m_context = nullptr;
 
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
 };
 
+/// @brief 렌더링 및 Vulkan 관련 유틸리티 함수들을 제공하는 클래스입니다.
 class RenderUtils {
 public:
     static void transitionImageLayout(
@@ -124,8 +136,7 @@ public:
     );
 };
 
-class GlobalPointCloudManager;
-
+/// @brief 개별 렌더링 객체 노드의 ID, 정점 수, GPU 버퍼 내 슬롯 인덱스 및 변환 행렬을 가지는 구조체입니다.
 struct RenderNode {
     uint64_t id;
     uint32_t vertexCount;
@@ -133,34 +144,29 @@ struct RenderNode {
     glm::mat4 transform;
 };
 
+/// @brief 카메라로부터의 거리와 렌더링할 노드 정보 등 포인트 클라우드 그리기 명령을 담는 구조체입니다.
 struct PointCloudDrawCmd {
     float distanceToCamera;
     RenderNode node;
-    GlobalPointCloudManager* manager;
-    VkPipeline pipeline;
-    VkPipelineLayout pipelineLayout;
+    Shader* shader;
+    PointCloudDataManager* manager;
+
 };
 
+bool operator<(const PointCloudDrawCmd& a, const PointCloudDrawCmd& b);
+
+/// @brief 렌더링할 그리기 명령들을 수집하고 카메라 거리를 기준으로 정렬하여 관리하는 큐 클래스입니다.
 class RenderQueue {
 public:
-    void clear() {
-        m_pointCloudCmds.clear();
-    }
+    void clear();
 
-    void setGlobalData(const GlobalData& data) { m_globalData = data; }
+    void setCamera(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& pos);
+    void setPointSizeParams(float multiplier, float minSize, float maxSize);
+    void submitPointCloudCmd(const PointCloudDrawCmd& cmd);
+
+    void sort();
+
     const GlobalData& getGlobalData() const { return m_globalData; }
-
-    void submitPointCloud(float distance, const RenderNode& node, GlobalPointCloudManager* manager, VkPipeline pipeline, VkPipelineLayout layout) {
-        m_pointCloudCmds.push_back({distance, node, manager, pipeline, layout});
-    }
-
-    void sort() {
-        std::sort(m_pointCloudCmds.begin(), m_pointCloudCmds.end(), 
-            [](const PointCloudDrawCmd& a, const PointCloudDrawCmd& b) {
-                return a.distanceToCamera < b.distanceToCamera;
-            });
-    }
-
     const std::vector<PointCloudDrawCmd>& getPointCloudCmds() const { return m_pointCloudCmds; }
 
 private:

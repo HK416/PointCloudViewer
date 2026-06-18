@@ -1,9 +1,14 @@
 #pragma once
-#include "PointCloudManager.h"
+#include "PointCloudVertex.h"
 #include "FileManager.h"
 
 struct Frustum;
 
+//
+// ================ Bound3D ================
+//
+
+/// @brief 3차원 공간에서 축 정렬 바운딩 박스(AABB)를 나타내는 구조체입니다.
 struct Bound3D {
     glm::vec3 min;
     glm::vec3 max;
@@ -12,12 +17,22 @@ struct Bound3D {
     glm::vec3 getSize() const;
 };
 
+//
+// ================ ChunkRenderInfo ================
+//
+
+/// @brief 렌더링할 청크 데이터의 위치, 스팬(Span), ID 등 정보를 담는 구조체입니다.
 struct ChunkRenderInfo {
     uint64_t id;
     ChunkSpan span;
     glm::vec3 center;
 };
 
+//
+// ================ OctreeNode ================
+//
+
+/// @brief 옥트리 구조의 단일 노드를 나타내며, 포인트를 저장하고 자식 노드로 분할하는 역할을 하는 클래스입니다.
 class OctreeNode {
 public:
     OctreeNode() = delete;
@@ -65,10 +80,15 @@ private:
     glm::vec3 m_invVoxelSize{0.0f};
 
 public:
-    static const int gridResolution = 64;
-    static const int maxCapacity = gridResolution * gridResolution * gridResolution;
+    static constexpr int gridResolution = 64;
+    static constexpr int maxCapacity = gridResolution * gridResolution * gridResolution;
 };
 
+//
+// ================ Octree ================
+//
+
+/// @brief 포인트 데이터를 공간적으로 분할 및 관리하기 위한 옥트리 자료구조를 나타내는 클래스입니다.
 class Octree {
 public:
     Octree() = delete;

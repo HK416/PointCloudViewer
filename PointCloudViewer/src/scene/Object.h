@@ -1,16 +1,19 @@
 #pragma once
-#include <memory>
-#include <filesystem>
 #include "Transform.h"
 
 class RenderQueue;
 class PointCloudFileManager;
-class GlobalPointCloudManager;
+class PointCloudDataManager;
 class TransferManager;
 class RenderContext;
 class Octree;
+class Shader;
 
-// ========== 오브젝트 기본 클래스 ==========
+//
+// ================ Object ================
+//
+
+/// @brief 씬(Scene) 내에 존재하는 모든 객체의 기본이 되며, 계층 구조와 트랜스폼을 가지는 최상위 클래스입니다.
 class Object {
 public:
     Object(const Object&) = delete;
@@ -58,7 +61,12 @@ protected:
     bool m_isPendingDestroy = false;
 };
 
-// ========== 카메라 ==========
+
+//
+// ================ Camera ================
+//
+
+/// @brief 뷰 행렬과 투영 행렬을 제공하는 씬 내의 카메라를 나타내는 추상 기저 클래스입니다.
 class Camera : public Object {
 public:
     Camera(const Camera&) = delete;
@@ -73,14 +81,22 @@ public:
     void applyToQueue(RenderQueue& queue);
 };
 
-// ========== 원근(Perspective) 카메라 ==========
+
+//
+// ================ PerspectiveCamera ================
+//
+
+/// @brief 원근 투영(Perspective Projection) 방식을 사용하는 카메라 클래스입니다.
 class PerspectiveCamera : public Camera {
 public:
     PerspectiveCamera(const PerspectiveCamera&) = delete;
     PerspectiveCamera& operator=(const PerspectiveCamera&) = delete;
 
-    PerspectiveCamera();
+    PerspectiveCamera(GLFWwindow* window = nullptr);
     virtual ~PerspectiveCamera() = default;
+
+    void setMoveSpeed(float speed) { m_moveSpeed = speed; }
+    float getMoveSpeed() const { return m_moveSpeed; }
 
     void setPerspective(float fovYDegree, float aspect, float nearZ, float farZ);
     void setAspectRatio(float aspect);
@@ -95,8 +111,11 @@ public:
 
 protected:
     virtual void updateWorldMatrix() override;
+    virtual void onUpdate(float elapsedTimeSec) override;
 
 protected:
+    struct GLFWwindow* m_window = nullptr;
+    float m_moveSpeed = 20.0f;
     float m_fov = 45.0f;
     float m_aspect = 1.0f;
     float m_nearZ = 0.1f;
@@ -106,7 +125,12 @@ protected:
     glm::mat4 m_projectionMatrix{1.0f};
 };
 
-// ========== 포인트 클라우드 오브젝트 ==========
+
+//
+// ================ PointCloudObject ================
+//
+
+/// @brief 씬 내에 배치되어 포인트 클라우드 데이터를 로드하고 렌더링하는 객체 클래스입니다.
 class PointCloudObject : public Object {
 public:
     PointCloudObject() = delete;
@@ -114,24 +138,22 @@ public:
     PointCloudObject& operator=(const PointCloudObject&) = delete;
 
     PointCloudObject(
-        RenderContext* context, 
+        Shader* shader,
         std::unique_ptr<PointCloudFileManager> fileManager,
         std::unique_ptr<Octree> octree,
-        std::unique_ptr<GlobalPointCloudManager> pointCloudManager,
-        VkPipeline pipeline,
-        VkPipelineLayout pipelineLayout
+        std::unique_ptr<PointCloudDataManager> pointCloudManager
     );
-    virtual ~PointCloudObject();
+    virtual ~PointCloudObject() = default;
 
     virtual void render(RenderQueue& queue) override;
 
-    GlobalPointCloudManager* getManager() const { return m_pointCloudManager.get(); }
+    PointCloudDataManager* getManager() const { return m_pointCloudManager.get(); }
 
 private:
     std::unique_ptr<PointCloudFileManager> m_fileManager;
-    std::unique_ptr<GlobalPointCloudManager> m_pointCloudManager;
+    std::unique_ptr<PointCloudDataManager> m_pointCloudManager;
     std::unique_ptr<Octree> m_octree;
 
-    VkPipeline m_pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+    /// @brief 소유하지 않는 클래스 맴버 변수
+    Shader* m_shader = nullptr;
 };

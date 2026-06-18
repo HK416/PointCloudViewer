@@ -4,6 +4,10 @@
 #include "FileManager.h"
 #include "Renderer.h"
 
+//
+// ================ FixedSlotAllocator ================
+//
+
 FixedSlotAllocator::FixedSlotAllocator(size_t maxSlots) {
     m_freeSlots.reserve(maxSlots);
     for (size_t i = maxSlots; i > 0; --i) {
@@ -25,7 +29,11 @@ void FixedSlotAllocator::free(size_t slotIndex) {
     m_freeSlots.push_back(slotIndex);
 }
 
-GlobalPointCloudManager::GlobalPointCloudManager(
+//
+// ================ PointCloudDataManager ================
+//
+
+PointCloudDataManager::PointCloudDataManager(
     RenderContext* context,
     TransferManager* transferManager,
     PointCloudFileManager* fileManager,
@@ -54,19 +62,18 @@ GlobalPointCloudManager::GlobalPointCloudManager(
         nullptr
     );
     if (res != VK_SUCCESS) {
-        spdlog::critical("[GlobalPointCloudManager] Failed to create Global Point Cloud Buffer! (CODE:{:#08x})", (int)res);
-        throw std::runtime_error(std::format("Failed to create Global Point Cloud Buffer! (CODE:{:#08x})", (int)res));
+        throw std::runtime_error(std::format("Failed to create Point Cloud Buffer! (CODE:{:#08x})", (int)res));
     }
-    spdlog::info("[GlobalPointCloudManager] Initialized with capacity: {} nodes ({} MB VRAM)", maxNodesCapacity, (maxNodesCapacity * bytesPerNode) / (1024 * 1024));
+    spdlog::info("[PointCloudDataManager] Initialized with capacity: {} nodes ({} MB VRAM)", maxNodesCapacity, (maxNodesCapacity * bytesPerNode) / (1024 * 1024));
 }
 
-GlobalPointCloudManager::~GlobalPointCloudManager() {
+PointCloudDataManager::~PointCloudDataManager() {
     if (m_context && m_globalBuffer != VK_NULL_HANDLE) {
         vmaDestroyBuffer(m_context->getAllocator(), m_globalBuffer, m_globalAllocation);
     }
 }
 
-void GlobalPointCloudManager::updateStreamingState() {
+void PointCloudDataManager::updateStreamingState() {
     bool uploadQueuedThisFrame = false;
     std::vector<uint64_t> queuedIds;
 
@@ -87,7 +94,7 @@ void GlobalPointCloudManager::updateStreamingState() {
 
         if (node.state == PointCloudNode::State::PendingUpload) {
             if (node.tempVertices.empty()) {
-                spdlog::warn("[GlobalPointCloudManager] Node {} has empty vertices, marking as Ready.", id);
+                spdlog::warn("[PointCloudDataManager] Node {} has empty vertices, marking as Ready.", id);
                 node.state = PointCloudNode::State::Ready;
                 continue;
             }
@@ -117,7 +124,7 @@ void GlobalPointCloudManager::updateStreamingState() {
     }
 }
 
-void GlobalPointCloudManager::requestNodes(const std::vector<StreamRequest>& visibleRequest) {
+void PointCloudDataManager::requestNodes(const std::vector<StreamRequest>& visibleRequest) {
     int activeLoads = 0;
     for (const auto& [id, node] : m_nodeRegistry) {
         if (node.state == PointCloudNode::State::LoadingFromDisk) {
@@ -149,7 +156,7 @@ void GlobalPointCloudManager::requestNodes(const std::vector<StreamRequest>& vis
 
         auto slotOpt = m_slotAllocator->allocate();
         if (!slotOpt.has_value()) {
-            spdlog::warn("[GlobalPointCloudManager] VRAM Slots full! Cannot load node {}", id);
+            spdlog::warn("[PointCloudDataManager] VRAM Slots full! Cannot load node {}", id);
             continue;
         }
 
@@ -168,12 +175,12 @@ void GlobalPointCloudManager::requestNodes(const std::vector<StreamRequest>& vis
     }
 }
 
-void GlobalPointCloudManager::bindGlobalBuffer(VkCommandBuffer cmd) const {
+void PointCloudDataManager::bindGlobalBuffer(VkCommandBuffer cmd) const {
     VkDeviceSize offsets[]{0};
     vkCmdBindVertexBuffers(cmd, 0, 1, &m_globalBuffer, offsets);
 }
 
-bool GlobalPointCloudManager::getRenderNode(uint64_t id, RenderNode& outNode) const {
+bool PointCloudDataManager::getRenderNode(uint64_t id, RenderNode& outNode) const {
     auto it = m_nodeRegistry.find(id);
     if (it != m_nodeRegistry.end() && it->second.state == PointCloudNode::State::Ready) {
         outNode.id = id;
@@ -184,7 +191,7 @@ bool GlobalPointCloudManager::getRenderNode(uint64_t id, RenderNode& outNode) co
     return false;
 }
 
-void GlobalPointCloudManager::drawNodes(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, const std::vector<RenderNode>& nodes) const {
+void PointCloudDataManager::drawNodes(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, const std::vector<RenderNode>& nodes) const {
     for (const auto& renderNode : nodes) {
         auto it = m_nodeRegistry.find(renderNode.id);
         if (it != m_nodeRegistry.end() && it->second.state == PointCloudNode::State::Ready) {
@@ -195,7 +202,7 @@ void GlobalPointCloudManager::drawNodes(VkCommandBuffer cmd, VkPipelineLayout pi
     }
 }
 
-void GlobalPointCloudManager::evictLRU() {
+void PointCloudDataManager::evictLRU() {
     uint64_t targetId = m_lruList.back();
     auto& node = m_nodeRegistry[targetId];
 

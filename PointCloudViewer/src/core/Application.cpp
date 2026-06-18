@@ -2,6 +2,8 @@
 #include "Application.h"
 #include "Renderer.h"
 #include "PointCloudManager.h"
+#include "Shader.h"
+#include "ShaderLayout.h"
 
 Application::Application(GLFWwindow* window) : m_window(window) {
     m_context = std::make_unique<RenderContext>(window);
@@ -12,7 +14,7 @@ Application::Application(GLFWwindow* window) : m_window(window) {
     initImGuiResources();
     createSyncObjects();
 
-    m_scene = std::make_unique<MainScene>(m_context.get());
+    m_scene = std::make_unique<MainScene>(m_window, m_context.get());
     m_scene->onEnter();
 }
 
@@ -59,6 +61,7 @@ void Application::drawFrame(float elapsedTimeSec) {
 
     if (m_scene) {
         m_scene->update(elapsedTimeSec);
+        m_scene->postUpdate(elapsedTimeSec);
     }
 
     VkResult res = vkWaitForFences(m_context->getDevice(), 1, &m_inFlightFence, VK_TRUE, UINT64_MAX);
@@ -405,28 +408,35 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
         m_scene->onPreRender(cmd);
 
         const auto& ptCmds = queue.getPointCloudCmds();
-        GlobalPointCloudManager* currentManager = nullptr;
-        VkPipeline currentPipeline = VK_NULL_HANDLE;
+        PointCloudDataManager* currentManager = nullptr;
+        Shader* currentShader = nullptr;
         VkPipelineLayout currentLayout = VK_NULL_HANDLE;
         std::vector<RenderNode> batchNodes;
 
         for (const auto& drawCmd : ptCmds) {
-            bool stateChanged = (currentManager != drawCmd.manager) || (currentPipeline != drawCmd.pipeline);
+            bool stateChanged = (currentManager != drawCmd.manager) || (currentShader != drawCmd.shader);
             if (stateChanged) {
                 if (currentManager != nullptr && !batchNodes.empty()) {
                     currentManager->bindGlobalBuffer(cmd);
                     currentManager->drawNodes(cmd, currentLayout, batchNodes);
                     batchNodes.clear();
                 }
-                if (currentPipeline != drawCmd.pipeline) {
-                    currentPipeline = drawCmd.pipeline;
-                    currentLayout = drawCmd.pipelineLayout;
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline);
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentLayout, 0, 1, &m_globalResources[frameIndex].descriptorSet, 0, nullptr);
+                if (currentShader != drawCmd.shader) {
+                    currentShader = drawCmd.shader;
+                    if (currentShader && currentShader->getLayout()) {
+                        currentLayout = currentShader->getLayout()->getPipelineLayout();
+                        currentShader->bind(cmd);
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentLayout, 0, 1, &m_globalResources[frameIndex].descriptorSet, 0, nullptr);
+                    } else {
+                        spdlog::error("[Render] Invalid shader or layout in draw command!");
+                        currentLayout = VK_NULL_HANDLE;
+                    }
                 }
                 currentManager = drawCmd.manager;
             }
-            batchNodes.push_back(drawCmd.node);
+            if (currentLayout != VK_NULL_HANDLE) {
+                batchNodes.push_back(drawCmd.node);
+            }
         }
 
         if (currentManager != nullptr && !batchNodes.empty()) {

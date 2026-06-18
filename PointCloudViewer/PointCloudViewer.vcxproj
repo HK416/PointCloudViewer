@@ -11,6 +11,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\graphics\Shader.cpp" />
+    <ClCompile Include="src\graphics\ShaderLayout.cpp" />
     <ClCompile Include="src\graphics\Renderer.cpp" />
     <ClCompile Include="src\core\stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -27,6 +29,9 @@
     <ClCompile Include="src\scene\Transform.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\graphics\Shader.h" />
+    <ClInclude Include="src\graphics\ShaderLayout.h" />
+    <ClInclude Include="src\graphics\PointCloudVertex.h" />
     <ClInclude Include="src\graphics\Renderer.h" />
     <ClInclude Include="src\core\Application.h" />
     <ClInclude Include="src\graphics\PointCloudManager.h" />

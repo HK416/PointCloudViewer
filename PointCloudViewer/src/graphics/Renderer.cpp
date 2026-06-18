@@ -1,6 +1,10 @@
 #include "stdafx.h"
 #include "Renderer.h"
 
+//
+// ================ RenderContext ================
+//
+
 RenderContext::RenderContext(GLFWwindow* window) {
     createRenderInstance();
     createRenderSurface(window);
@@ -278,6 +282,10 @@ std::vector<const char*> RenderContext::getRequiredExtensions() {
     return extensions;
 }
 
+//
+// ================ RenderSwapchain ================
+//
+
 RenderSwapchain::RenderSwapchain(RenderContext* context, GLFWwindow* window) 
     : m_context(context) {
     int width = 0, height = 0;
@@ -423,6 +431,10 @@ void RenderSwapchain::createDepthResources(int width, int height) {
     }
 }
 
+//
+// ================ CommandManager ================
+//
+
 CommandManager::CommandManager(RenderContext* context, RenderSwapchain* swapchain) : m_context(context) {
     createCommandPool(context->getGraphicsQueueFamilyIndex());
     createCommandBuffers(swapchain->numSwapchainImages());
@@ -468,6 +480,10 @@ void CommandManager::createCommandBuffers(size_t swapchainImageCount) {
     }
 }
 
+//
+// ================ RenderUtils ================
+//
+
 void RenderUtils::transitionImageLayout(
     VkCommandBuffer cmd,
     VkImage image,
@@ -512,4 +528,43 @@ void RenderUtils::transitionImageLayout(
         0, nullptr,
         1, &barrier
     );
+}
+
+//
+// ================ PointCloudDrawCmd ================
+//
+
+bool operator<(const PointCloudDrawCmd& a, const PointCloudDrawCmd& b) {
+    return std::tie(a.shader, a.manager, a.distanceToCamera) <
+           std::tie(b.shader, b.manager, b.distanceToCamera);
+}
+
+//
+// ================ RenderQueue ================
+//
+
+void RenderQueue::clear() {
+    m_globalData.view = glm::mat4{1.0f};
+    m_globalData.proj = glm::mat4{1.0f};
+    m_globalData.cameraPos = glm::vec3{0.0f};
+}
+
+void RenderQueue::setCamera(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& pos) {
+    m_globalData.view = view;
+    m_globalData.proj = proj;
+    m_globalData.cameraPos = pos;
+}
+
+void RenderQueue::setPointSizeParams(float multiplier, float minSize, float maxSize) {
+    m_globalData.pointSizeMultiplier = multiplier;
+    m_globalData.pointSizeMin = minSize;
+    m_globalData.pointSizeMax = maxSize;
+}
+
+void RenderQueue::submitPointCloudCmd(const PointCloudDrawCmd& cmd) {
+    m_pointCloudCmds.push_back(cmd);
+}
+
+void RenderQueue::sort() {
+    std::sort(m_pointCloudCmds.begin(), m_pointCloudCmds.end());
 }

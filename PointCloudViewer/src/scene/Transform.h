@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 
+/// @brief 3차원 공간에서의 위치, 회전, 스케일을 관리하고 변환 행렬을 계산하는 트랜스폼 클래스입니다.
 class Transform {
 public:
     void setFromMatrix(const glm::mat4& matrix);

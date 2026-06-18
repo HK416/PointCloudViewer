@@ -7,64 +7,42 @@
 #include "FileManager.h"
 #include "Octree.h"
 #include "Frustum.h"
+#include "Shader.h"
+#include "ShaderLayout.h"
 
-namespace {
-    std::vector<char> readShaderFile(const std::string& filename) {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open shader file: " + filename);
-        }
-        size_t fileSize = (size_t)file.tellg();
-        std::vector<char> buffer(fileSize);
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-        file.close();
-        return buffer;
-    }
+//
+// ================ MainScene ================
+//
 
-    VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code) {
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-        VkShaderModule shaderModule;
-        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create shader module!");
-        }
-        return shaderModule;
-    }
-}
-
-MainScene::MainScene(RenderContext* context) : Scene(context) {
+MainScene::MainScene(GLFWwindow* window, RenderContext* context) : Scene(window, context) {
     m_transferManager = std::make_unique<TransferManager>(context);
-    m_camera = std::make_unique<PerspectiveCamera>();
 
-    m_camera->getTransform().setPosition(glm::vec3(0.0f, 0.0f, 10.0f));
-    initPipeline();
+    // Create main camera
+    auto camera = std::make_unique<PerspectiveCamera>(m_window);
+    camera->getTransform().setPosition({0.0f, 0.0f, 0.0f});
+
+    m_mainCamera = camera.get();
+    m_rootObjects.push_back(camera.get());
+    m_allObjects.push_back(std::move(camera));
 }
 
-MainScene::~MainScene() {
-    if (m_context && m_context->getDevice() != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(m_context->getDevice());
-        if (m_pipeline) vkDestroyPipeline(m_context->getDevice(), m_pipeline, nullptr);
-        if (m_pipelineLayout) vkDestroyPipelineLayout(m_context->getDevice(), m_pipelineLayout, nullptr);
-    }
-}
+void MainScene::onEnter() {
+    // Create shader layout
+    auto pcLayout = ShaderLayoutBuilder()
+            .addDescriptorSetLayout(m_context->getGlobalDescriptorSetLayout())
+            .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
+            .build(m_context);
+    m_shaderLayouts["PointCloud"] = std::move(pcLayout);
 
-void MainScene::onEnter() {}
-void MainScene::onExit() {}
+    // Create point cloud shader
+    auto pcShader = std::make_unique<PointCloudShader>(m_context, m_shaderLayouts["PointCloud"].get());
+    m_shaders["PointCloud"] = std::move(pcShader);
+}
 
 bool MainScene::onEvent(const Event& event) {
     if (const auto* resizeEvent = std::get_if<WindowResized>(&event)) {
         if (resizeEvent->height > 0) {
-            m_camera->setAspectRatio(static_cast<float>(resizeEvent->width) / static_cast<float>(resizeEvent->height));
-        }
-        return true;
-    }
-
-    if (const auto* keyEvent = std::get_if<KeyEvent>(&event)) {
-        if (keyEvent->key >= 0 && keyEvent->key < 1024) {
-            m_keys[keyEvent->key] = (keyEvent->action != GLFW_RELEASE);
+            m_mainCamera->setAspectRatio(static_cast<float>(resizeEvent->width) / static_cast<float>(resizeEvent->height));
         }
         return true;
     }
@@ -82,21 +60,14 @@ bool MainScene::onEvent(const Event& event) {
             glm::vec2 delta = pos - m_lastMousePos;
             float sensitivity = 0.003f;
             
-            glm::quat yaw = glm::angleAxis(-delta.x * sensitivity, glm::vec3(0.0f, 1.0f, 0.0f));
-            glm::quat pitch = glm::angleAxis(-delta.y * sensitivity, glm::vec3(1.0f, 0.0f, 0.0f));
+            glm::vec3 euler = m_mainCamera->getTransform().getEulerAngles();
             
-            glm::quat currentRot = m_camera->getTransform().getRotation();
-            m_camera->getTransform().setRotation(yaw * currentRot * pitch);
+            float pitchAngle = euler.x - delta.y * sensitivity * 100.0f;
+            float rollAngle  = euler.z - delta.x * sensitivity * 100.0f;
+            
+            m_mainCamera->getTransform().setRotationEuler(glm::vec3(pitchAngle, 0.0f, rollAngle));
         }
         m_lastMousePos = pos;
-        return true;
-    }
-
-    if (const auto* scroll = std::get_if<MouseScrollEvent>(&event)) {
-        glm::vec3 forward = m_camera->getTransform().getRotation() * glm::vec3(0.0f, 0.0f, -1.0f);
-        m_camera->getTransform().setPosition(
-            m_camera->getTransform().getPosition() + forward * static_cast<float>(scroll->yoffset) * 1.0f
-        );
         return true;
     }
 
@@ -111,8 +82,7 @@ bool MainScene::onEvent(const Event& event) {
                     auto fileManager = std::make_unique<PointCloudFileManager>(tempBinPath);
 
                     Bound3D bound;
-                    // 임시 바운딩 박스 설정 (Octree 생성 시 엄격한 크기 정보가 필요하므로 헤더 파싱 후 다시 생성됨)
-                    auto octree = std::make_unique<Octree>(fileManager.get(), Bound3D{glm::vec3(-1000.0f), glm::vec3(1000.0f)});
+                    std::unique_ptr<Octree> octree;
                     
                     std::string ext = std::filesystem::path(filePath).extension().string();
                     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -218,7 +188,7 @@ bool MainScene::onEvent(const Event& event) {
                     spdlog::info("[Octree] Build complete!");
 
                     // 256개 노드 용량 설정 (약 2GB VRAM)
-                    auto pointCloudManager = std::make_unique<GlobalPointCloudManager>(
+                    auto pointCloudManager = std::make_unique<PointCloudDataManager>(
                         m_context, m_transferManager.get(), fileManager.get(), 256
                     );
 
@@ -228,17 +198,19 @@ bool MainScene::onEvent(const Event& event) {
                     float maxDim = std::max({size.x, size.y, size.z});
                     
                     spdlog::info("[Camera] Focusing on model. Center: ({:.2f}, {:.2f}, {:.2f}), Size: {:.2f}", center.x, center.y, center.z, maxDim);
-                    m_camera->getTransform().setPosition(center + glm::vec3(0.0f, 0.0f, maxDim * 1.0f));
-                    m_camera->getTransform().setRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                    m_mainCamera->getTransform().setPosition(center + glm::vec3(0.0f, 0.0f, maxDim * 1.0f));
+                    m_mainCamera->getTransform().setRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
 
-                    auto pc = std::make_shared<PointCloudObject>(
-                        m_context, std::move(fileManager), std::move(octree), std::move(pointCloudManager),
-                        m_pipeline, m_pipelineLayout
+                    auto pc = std::make_unique<PointCloudObject>(
+                        m_shaders["PointCloud"].get(),
+                        std::move(fileManager),
+                        std::move(octree),
+                        std::move(pointCloudManager)
                     );
 
                     {
                         std::lock_guard<std::mutex> lock(m_sceneMutex);
-                        m_pointClouds.push_back(pc);
+                        m_addedObjects.push(std::move(pc));
                     }
 
                     m_isLoading = false;
@@ -257,53 +229,73 @@ bool MainScene::onEvent(const Event& event) {
 }
 
 void MainScene::update(float elapsedTimeSec) {
-    m_camera->update(elapsedTimeSec);
-
-    // 카메라 이동 속도 설정
-    float moveSpeed = 10.0f * elapsedTimeSec;
-
-    glm::vec3 forward = m_camera->getTransform().getRotation() * glm::vec3(0.0f, 0.0f, -1.0f);
-    glm::vec3 right = m_camera->getTransform().getRotation() * glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f); // 월드 기준 위쪽 방향
-
-    glm::vec3 pos = m_camera->getTransform().getPosition();
-
-    // WASD 이동
-    if (m_keys[GLFW_KEY_W]) pos += forward * moveSpeed;
-    if (m_keys[GLFW_KEY_S]) pos -= forward * moveSpeed;
-    if (m_keys[GLFW_KEY_A]) pos -= right * moveSpeed;
-    if (m_keys[GLFW_KEY_D]) pos += right * moveSpeed;
-
-    // Space/Shift 수직 이동
-    if (m_keys[GLFW_KEY_SPACE]) pos += up * moveSpeed;
-    if (m_keys[GLFW_KEY_LEFT_SHIFT] || m_keys[GLFW_KEY_RIGHT_SHIFT]) pos -= up * moveSpeed;
-
-    m_camera->getTransform().setPosition(pos);
-
-    std::lock_guard<std::mutex> lock(m_sceneMutex);
-    for (auto& pc : m_pointClouds) {
-        if (pc) pc->update(elapsedTimeSec);
+    for (Object* rootObj : m_rootObjects) {
+        if (rootObj && !rootObj->isPendingDestroy()) {
+            rootObj->update(elapsedTimeSec);
+        }
     }
 }
 
-void MainScene::onPreRender(VkCommandBuffer cmd) {
+void MainScene::postUpdate(float elapsedTimeSec) {
+    for (Object* rootObj : m_rootObjects) {
+        if (rootObj && !rootObj->isPendingDestroy()) {
+            rootObj->lateUpdate(elapsedTimeSec);
+        }
+    }
+
+    // remove destroyed objects
+    m_rootObjects.erase(
+        std::remove_if(
+            m_rootObjects.begin(),
+            m_rootObjects.end(),
+            [](Object* obj) {
+                return obj == nullptr || obj->isPendingDestroy();
+            }
+        ),
+        m_rootObjects.end()
+    );
+    
+    m_allObjects.erase(
+        std::remove_if(
+            m_allObjects.begin(),
+            m_allObjects.end(),
+            [](const auto& obj) {
+                return obj == nullptr || obj->isPendingDestroy();
+            }
+        ),
+        m_allObjects.end()
+    );
+
+    // add new objects
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    while (!m_addedObjects.empty()) {
+        auto obj = std::move(m_addedObjects.front());
+        m_addedObjects.pop();
+
+        m_rootObjects.push_back(obj.get());
+        m_allObjects.push_back(std::move(obj));
+    }
 }
 
 void MainScene::render(RenderQueue& queue) {
-    m_camera->applyToQueue(queue);
-
-    std::lock_guard<std::mutex> lock(m_sceneMutex);
-    for (auto& pc : m_pointClouds) {
-        if (pc) pc->render(queue);
+    if (m_mainCamera) {
+        m_mainCamera->applyToQueue(queue);
     }
-}
+    queue.setPointSizeParams(m_pointSizeMultiplier, m_pointSizeMin, m_pointSizeMax);
 
-void MainScene::onPostRender(VkCommandBuffer cmd) {
+    for (Object* obj : m_rootObjects) {
+        if (obj) {
+            obj->render(queue);
+        }
+    }
 }
 
 void MainScene::onGUI() {
     // 화면 상단에 카메라 정보 모달 창 표시
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
     const float PAD = 10.0f;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 work_pos = viewport->WorkPos;
@@ -311,163 +303,24 @@ void MainScene::onGUI() {
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowBgAlpha(0.65f);
 
-    if (ImGui::Begin("Camera Info", nullptr, window_flags)) {
-        glm::vec3 pos = m_camera->getTransform().getPosition();
-        glm::vec3 euler = glm::degrees(glm::eulerAngles(m_camera->getTransform().getRotation()));
+    if (m_mainCamera && ImGui::Begin("Camera Info", nullptr, window_flags)) {
+        glm::vec3 pos = m_mainCamera->getTransform().getPosition();
+        glm::vec3 euler = m_mainCamera->getTransform().getEulerAngles();
 
         ImGui::Text("Camera Position: X: %.2f, Y: %.2f, Z: %.2f", pos.x, pos.y, pos.z);
         ImGui::Text("Camera Rotation: Pitch: %.2f, Yaw: %.2f, Roll: %.2f", euler.x, euler.y, euler.z);
+
+        ImGui::Separator();
+        float speed = m_mainCamera->getMoveSpeed();
+        if (ImGui::SliderFloat("Move Speed", &speed, 1.0f, 5000.0f)) {
+            m_mainCamera->setMoveSpeed(speed);
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Point Cloud Settings:");
+        ImGui::SliderFloat("Size Multiplier", &m_pointSizeMultiplier, 10.0f, 2000.0f);
+        ImGui::SliderFloat("Min Point Size", &m_pointSizeMin, 1.0f, 5.0f);
+        ImGui::SliderFloat("Max Point Size", &m_pointSizeMax, 1.0f, 50.0f);
     }
     ImGui::End();
-}
-
-void MainScene::initPipeline() {
-    VkDevice device = m_context->getDevice();
-
-    std::string vertPath = "PointCloudViewer/shaders/point.vert.spv";
-    if (!std::filesystem::exists(vertPath)) vertPath = "shaders/point.vert.spv";
-
-    std::string fragPath = "PointCloudViewer/shaders/point.frag.spv";
-    if (!std::filesystem::exists(fragPath)) fragPath = "shaders/point.frag.spv";
-
-    auto vertShaderCode = readShaderFile(vertPath);
-    auto fragShaderCode = readShaderFile(fragPath);
-
-    VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
-    VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-    VkVertexInputBindingDescription bindingDescription{};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = GlobalPointCloudManager::vertexStride;
-    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
-    attributeDescriptions[0].binding = 0;
-    attributeDescriptions[0].location = 0;
-    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(PointCloudVertex, position);
-
-    attributeDescriptions[1].binding = 0;
-    attributeDescriptions[1].location = 1;
-    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(PointCloudVertex, color);
-
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    std::vector<VkDynamicState> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
-    VkPushConstantRange pushConstant{};
-    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstant.offset = 0;
-    pushConstant.size = sizeof(glm::mat4);
-
-    VkDescriptorSetLayout globalLayout = m_context->getGlobalDescriptorSetLayout();
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &globalLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create pipeline layout!");
-    }
-
-    VkPipelineRenderingCreateInfo renderingCreateInfo{};
-    renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    renderingCreateInfo.colorAttachmentCount = 1;
-    renderingCreateInfo.pColorAttachmentFormats = &RenderSwapchain::swapchainImageFormat;
-    renderingCreateInfo.depthAttachmentFormat = RenderSwapchain::depthImageFormat;
-
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.pNext = &renderingCreateInfo;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = m_pipelineLayout;
-
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create graphics pipeline!");
-    }
-
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }

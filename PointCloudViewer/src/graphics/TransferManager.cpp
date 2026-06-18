@@ -4,7 +4,7 @@
 #include "PointCloudManager.h"
 
 TransferManager::TransferManager(RenderContext* context, size_t maxStagingSlots) 
-    : m_context(context), m_slotSize(GlobalPointCloudManager::bytesPerNode) {
+    : m_context(context), m_slotSize(PointCloudDataManager::bytesPerNode) {
     { 
         VkCommandPoolCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;

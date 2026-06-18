@@ -4,7 +4,7 @@
 constexpr uint32_t DEF_WIDTH = 1280;
 constexpr uint32_t DEF_HEIGHT = 720;
 
-void handleKeyInput(GLFWwindow* window, int key, int scancode, int action, int mods) {
+static void handleKeyInput(GLFWwindow* window, int key, int scancode, int action, int mods) {
     ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
     void* ptr = glfwGetWindowUserPointer(window);
@@ -12,13 +12,13 @@ void handleKeyInput(GLFWwindow* window, int key, int scancode, int action, int m
     application->dispatchEvent(KeyEvent{key, scancode, action, mods});
 }
 
-void handleFileDrop(GLFWwindow* window, int count, const char** paths) {
+static void handleFileDrop(GLFWwindow* window, int count, const char** paths) {
     void* ptr = glfwGetWindowUserPointer(window);
     Application* application = reinterpret_cast<Application*>(ptr);
     application->dispatchEvent(DragDropEvent{count, paths});
 }
 
-void handleMouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
+static void handleMouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
     ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
 
     void* ptr = glfwGetWindowUserPointer(window);
@@ -26,7 +26,7 @@ void handleMouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
     application->dispatchEvent(MouseScrollEvent{xoffset, yoffset});
 }
 
-void handleMouseButton(GLFWwindow* window, int button, int action, int mods) {
+static void handleMouseButton(GLFWwindow* window, int button, int action, int mods) {
     ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
     if (ImGui::GetIO().WantCaptureMouse) {
@@ -38,7 +38,7 @@ void handleMouseButton(GLFWwindow* window, int button, int action, int mods) {
     application->dispatchEvent(MouseButtonEvent{button, action, mods});
 }
 
-void handleCursorPosition(GLFWwindow* window, double xpos, double ypos) {
+static void handleCursorPosition(GLFWwindow* window, double xpos, double ypos) {
     ImGui_ImplGlfw_CursorPosCallback(window, xpos, ypos);
 
     void* ptr = glfwGetWindowUserPointer(window);
@@ -46,7 +46,7 @@ void handleCursorPosition(GLFWwindow* window, double xpos, double ypos) {
     application->dispatchEvent(CursorPosEvent{xpos, ypos});
 }
 
-void handleWindowResized(GLFWwindow* window, int width, int height) {
+static void handleWindowResized(GLFWwindow* window, int width, int height) {
     void* ptr = glfwGetWindowUserPointer(window);
     Application* application = reinterpret_cast<Application*>(ptr);
     application->setFramebufferResized();
@@ -104,7 +104,8 @@ int main(int argc, char** argv) {
         }
     } catch (const std::exception& e) {
         spdlog::error(e.what());
-        pfd::message("Error", e.what(), pfd::choice::ok, pfd::icon::error);
+        pfd::message dialog("Error", e.what(), pfd::choice::ok, pfd::icon::error);
+        dialog.result();
     }
 
     if (window) {
