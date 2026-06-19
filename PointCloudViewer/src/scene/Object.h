@@ -8,6 +8,8 @@ class TransferManager;
 class RenderContext;
 class Octree;
 class Shader;
+class ShaderLayout;
+class Texture;
 
 //
 // ================ Object ================
@@ -156,4 +158,49 @@ private:
 
     /// @brief 소유하지 않는 클래스 맴버 변수
     Shader* m_shader = nullptr;
+};
+
+
+//
+// ================ SkyboxObject ================
+//
+
+/// @brief 씬의 배경으로 사용되는 스카이박스를 렌더링하고 관리하는 객체입니다.
+class SkyboxObject : public Object {
+public:
+    SkyboxObject() = delete;
+    SkyboxObject(const SkyboxObject&) = delete;
+    SkyboxObject& operator=(const SkyboxObject&) = delete;
+
+    SkyboxObject(RenderContext* context, VkCommandBuffer cmd);
+    virtual ~SkyboxObject();
+
+    void applyToQueue(RenderQueue& queue);
+    void drawDirectly(VkCommandBuffer cmd);
+
+    ShaderLayout* getShaderLayout() const { return m_shaderLayout.get(); }
+
+private:
+    void createShader();
+    void createUniformBuffer();
+    void createCubemap(VkCommandBuffer cmd);
+    void createDescriptorSet();
+
+    void updateDescriptorSet();
+
+private:
+    /// @brief 소유하지 않는 클래스 맴버 변수
+    RenderContext* m_context = nullptr;
+
+    std::unique_ptr<ShaderLayout> m_shaderLayout;
+    std::unique_ptr<Shader> m_shader;
+    std::unique_ptr<Texture> m_texture;
+
+    struct SkyboxParams {
+        glm::vec4 color{1.0f};
+    } m_params;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+    VmaAllocation m_allocation = VK_NULL_HANDLE;
+    VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
+    bool m_dirty = true;
 };

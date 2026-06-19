@@ -19,6 +19,11 @@ public:
     void dispatchEvent(const Event& event);
     void setFramebufferResized() { m_framebufferResized = true; }
 
+    GLFWwindow* getWindow() const { return m_window; }
+    RenderContext* getContext() const { return m_context.get(); }
+    RenderSwapchain* getSwapchain() const { return m_swapchain.get(); }
+    CommandManager* getCommandManager() const { return m_commandManager.get(); }
+
 private:
     void cleanupGlobalResources();
     void createGlobalResources();

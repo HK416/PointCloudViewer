@@ -1,6 +1,7 @@
 #pragma once
 
 class PointCloudDataManager;
+class SkyboxObject;
 class Shader;
 
 /// @brief 셰이더에 전역적으로 전달되는 뷰, 투영 행렬 및 카메라 정보를 담는 구조체입니다.
@@ -11,6 +12,7 @@ struct alignas(16) GlobalData {
     float pointSizeMultiplier{100.0f};
     float pointSizeMin{1.0f};
     float pointSizeMax{10.0f};
+    float gamma{2.2f};
 };
 
 /// @brief Vulkan 인스턴스, 디바이스 등 렌더링에 필요한 핵심 환경을 초기화하고 관리하는 컨텍스트 클래스입니다.
@@ -74,9 +76,10 @@ public:
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     const std::vector<VkImage>& getImages() const { return m_swapchainImages; }
     const std::vector<VkImageView>& getImageViews() const { return m_swapchainImageViews; }
-    size_t numSwapchainImages() const { return m_swapchainImageViews.size(); }
+    uint32_t numSwapchainImages() const { return static_cast<uint32_t>(m_swapchainImageViews.size()); }
     VkImage getDepthImage() const { return m_depthImage; }
     VkImageView getDepthImageView() const { return m_depthImageView; }
+    VkExtent2D getExtent() const { return m_extent; }
 
 private:
     void createSwapchainResources(int width, int height);
@@ -93,6 +96,8 @@ private:
     VkImage m_depthImage = VK_NULL_HANDLE;
     VkImageView m_depthImageView = VK_NULL_HANDLE;
     VmaAllocation m_depthAllocation = VK_NULL_HANDLE;
+
+    VkExtent2D m_extent = { 0, 0 };
 
 public:
     static const VkFormat swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -111,6 +116,9 @@ public:
 
     VkCommandPool getCommandPool() const { return m_commandPool; }
     VkCommandBuffer getCommandBuffer(uint32_t index) { return m_commandBuffers[index]; }
+
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer cmd, VkQueue queue);
 
 private:
     void createCommandPool(uint32_t queueFamilyIndex);
@@ -133,6 +141,18 @@ public:
         VkImageLayout oldLayout,
         VkImageLayout newLayout,
         VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT
+    );
+
+    static void transitionImageLayout(
+        VkCommandBuffer cmd,
+        VkImage image,
+        VkFormat format,
+        uint32_t baseMip,
+        uint32_t mipCount,
+        uint32_t baseLayer,
+        uint32_t layerCount,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout
     );
 };
 
@@ -162,14 +182,17 @@ public:
 
     void setCamera(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& pos);
     void setPointSizeParams(float multiplier, float minSize, float maxSize);
+    void setSkyboxObject(SkyboxObject* skybox);
     void submitPointCloudCmd(const PointCloudDrawCmd& cmd);
 
     void sort();
 
     const GlobalData& getGlobalData() const { return m_globalData; }
     const std::vector<PointCloudDrawCmd>& getPointCloudCmds() const { return m_pointCloudCmds; }
+    SkyboxObject* getSkyboxObject() const { return m_skybox; }
 
 private:
     GlobalData m_globalData;
     std::vector<PointCloudDrawCmd> m_pointCloudCmds;
+    SkyboxObject* m_skybox = nullptr;
 };

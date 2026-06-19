@@ -4,18 +4,52 @@
 #include "PointCloudManager.h"
 #include "Shader.h"
 #include "ShaderLayout.h"
+#include "Object.h"
 
 Application::Application(GLFWwindow* window) : m_window(window) {
-    m_context = std::make_unique<RenderContext>(window);
-    m_swapchain = std::make_unique<RenderSwapchain>(m_context.get(), window);
-    m_commandManager = std::make_unique<CommandManager>(m_context.get(), m_swapchain.get());
+    try {
+        m_context = std::make_unique<RenderContext>(window);
+        m_swapchain = std::make_unique<RenderSwapchain>(m_context.get(), window);
+        m_commandManager = std::make_unique<CommandManager>(m_context.get(), m_swapchain.get());
 
-    createGlobalResources();
-    initImGuiResources();
-    createSyncObjects();
+        createGlobalResources();
+        initImGuiResources();
+        createSyncObjects();
 
-    m_scene = std::make_unique<MainScene>(m_window, m_context.get());
-    m_scene->onEnter();
+        m_scene = std::make_unique<MainScene>(this);
+        m_scene->onEnter();
+    } catch (...) {
+        if (m_context) {
+            vkDeviceWaitIdle(m_context->getDevice());
+
+            m_scene.reset();
+
+            if (ImGui::GetCurrentContext()) {
+                ImGui_ImplVulkan_Shutdown();
+                ImGui_ImplGlfw_Shutdown();
+                ImGui::DestroyContext();
+            }
+
+            if (m_imageAvailableSemaphore != VK_NULL_HANDLE) {
+                vkDestroySemaphore(m_context->getDevice(), m_imageAvailableSemaphore, nullptr);
+            }
+
+            if (m_renderFinishedSemaphore != VK_NULL_HANDLE) {
+                vkDestroySemaphore(m_context->getDevice(), m_renderFinishedSemaphore, nullptr);
+            }
+
+            if (m_inFlightFence != VK_NULL_HANDLE) {
+                vkDestroyFence(m_context->getDevice(), m_inFlightFence, nullptr);
+            }
+
+            cleanupGlobalResources();
+
+            m_commandManager.reset();
+            m_swapchain.reset();
+            m_context.reset();
+        }
+        throw;
+    }
 }
 
 Application::~Application() {
@@ -80,6 +114,7 @@ void Application::drawFrame(float elapsedTimeSec) {
     );
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        ImGui::EndFrame();
         recreateSwapchain();
         return;
     } else if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
@@ -160,7 +195,6 @@ void Application::drawFrame(float elapsedTimeSec) {
     res = vkQueuePresentKHR(m_context->getGraphicsQueue(), &presentInfo);
     if (res == VK_ERROR_OUT_OF_DATE_KHR ||
         res == VK_SUBOPTIMAL_KHR || m_framebufferResized) {
-        m_framebufferResized = false;
         recreateSwapchain();
     } else if (res != VK_SUCCESS) {
         throw std::runtime_error(std::format("Failed to present swapchain image! (CODE:{:#08x})", (int)res));
@@ -171,6 +205,9 @@ void Application::cleanupGlobalResources() {
     for (const auto& res : m_globalResources) {
         if (res.buffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_context->getAllocator(), res.buffer, res.allocation);
+        }
+        if (res.descriptorSet != VK_NULL_HANDLE) {
+            vkFreeDescriptorSets(m_context->getDevice(), m_context->getDescriptorPool(), 1, &res.descriptorSet);
         }
     }
 }
@@ -326,13 +363,14 @@ void Application::recreateSwapchain() {
     }
 
     vkDeviceWaitIdle(m_context->getDevice());
+    m_framebufferResized = false;
     
-    vkResetDescriptorPool(m_context->getDevice(), m_context->getDescriptorPool(), NULL);
     cleanupGlobalResources();
     m_commandManager.reset();
     m_swapchain.reset();
 
     m_swapchain = std::make_unique<RenderSwapchain>(m_context.get(), m_window);
+    ImGui_ImplVulkan_SetMinImageCount(m_swapchain->numSwapchainImages());
     m_commandManager = std::make_unique<CommandManager>(m_context.get(), m_swapchain.get());
     createGlobalResources();
 }
@@ -351,7 +389,6 @@ void Application::prepareRenderQueue(uint32_t frameIndex, RenderQueue& queue) {
 }
 
 void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue) {
-    // 스왑체인 이미지를 COLOR_ATTACHMENT_OPTIMAL 레이아웃으로 전환
     RenderUtils::transitionImageLayout(
         cmd,
         m_swapchain->getImages()[frameIndex],
@@ -359,9 +396,17 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     );
 
+    // 깊이 이미지를 DEPTH_ATTACHMENT_OPTIMAL 레이아웃으로 전환
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getDepthImage(),
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_ASPECT_DEPTH_BIT
+    );
+
     // 동적 렌더링 시작
-    int width, height;
-    glfwGetFramebufferSize(m_window, &width, &height);
+    VkExtent2D extent = m_swapchain->getExtent();
 
     VkRenderingAttachmentInfo colorAttachment = {};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -382,7 +427,7 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
     VkRenderingInfo renderingInfo = {};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = { 0, 0 };
-    renderingInfo.renderArea.extent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+    renderingInfo.renderArea.extent = extent;
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttachment;
@@ -393,8 +438,8 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(width);
-    viewport.height = static_cast<float>(height);
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -442,6 +487,21 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
         if (currentManager != nullptr && !batchNodes.empty()) {
             currentManager->bindGlobalBuffer(cmd);
             currentManager->drawNodes(cmd, currentLayout, batchNodes);
+        }
+
+        SkyboxObject* skybox = queue.getSkyboxObject();
+        if (skybox != nullptr) {
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                skybox->getShaderLayout()->getPipelineLayout(),
+                0,
+                1,
+                &m_globalResources[frameIndex].descriptorSet,
+                0,
+                nullptr
+            );
+            skybox->drawDirectly(cmd);
         }
 
         m_scene->onPostRender(cmd);

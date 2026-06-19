@@ -1,6 +1,6 @@
 #pragma once
 
-class RenderContext;
+class Application;
 class RenderQueue;
 class PointCloudObject;
 class PerspectiveCamera;
@@ -11,6 +11,7 @@ class ShaderLayout;
 class Shader;
 class Octree;
 class Object;
+class SkyboxObject;
 
 //
 // ================ Events ================
@@ -44,7 +45,7 @@ public:
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
 
-    Scene(GLFWwindow* window, RenderContext* context) : m_window(window), m_context(context) {}
+    Scene(Application* application) : m_application(application) {}
     virtual ~Scene() = default;
 
     virtual void onEnter() {}
@@ -63,9 +64,7 @@ public:
 
 protected:
     /// @brief 소유하지 않는 클래스 맴버 변수.
-    GLFWwindow* m_window = nullptr;
-    /// @brief 소유하지 않는 클래스 맴버 변수.
-    RenderContext* m_context = nullptr;
+    Application* m_application = nullptr;
 };
 
 //
@@ -79,7 +78,7 @@ public:
     MainScene(const MainScene&) = delete;
     MainScene& operator=(const MainScene&) = delete;
 
-    MainScene(GLFWwindow* window, RenderContext* context);
+    MainScene(Application* application);
     virtual ~MainScene() = default;
 
     virtual void onEnter() override;
@@ -114,6 +113,7 @@ private:
     std::queue<std::unique_ptr<Object>> m_addedObjects;
     std::mutex m_sceneMutex;
 
+    SkyboxObject* m_skybox = nullptr;
     PerspectiveCamera* m_mainCamera = nullptr;
     std::vector<std::unique_ptr<Object>> m_allObjects;
     std::vector<Object*> m_rootObjects;

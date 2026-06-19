@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Scene.h"
+#include "Application.h"
 #include "Renderer.h"
 #include "Object.h"
 #include "PointCloudManager.h"
@@ -14,28 +15,42 @@
 // ================ MainScene ================
 //
 
-MainScene::MainScene(GLFWwindow* window, RenderContext* context) : Scene(window, context) {
+MainScene::MainScene(Application* application) : Scene(application) {
+    GLFWwindow* window = m_application->getWindow();
+    RenderContext* context = m_application->getContext();
+    CommandManager* commandManager = m_application->getCommandManager();
+
     m_transferManager = std::make_unique<TransferManager>(context);
 
     // Create main camera
-    auto camera = std::make_unique<PerspectiveCamera>(m_window);
+    auto camera = std::make_unique<PerspectiveCamera>(window);
     camera->getTransform().setPosition({0.0f, 0.0f, 0.0f});
 
     m_mainCamera = camera.get();
     m_rootObjects.push_back(camera.get());
     m_allObjects.push_back(std::move(camera));
+
+    // Create skybox
+    VkCommandBuffer cmd = commandManager->beginSingleTimeCommands();
+    auto skybox = std::make_unique<SkyboxObject>(context, cmd);
+    m_skybox = skybox.get();
+    m_rootObjects.push_back(skybox.get());
+    m_allObjects.push_back(std::move(skybox));
+    commandManager->endSingleTimeCommands(cmd, context->getGraphicsQueue());
 }
 
 void MainScene::onEnter() {
+    RenderContext* context = m_application->getContext();
+
     // Create shader layout
     auto pcLayout = ShaderLayoutBuilder()
-            .addDescriptorSetLayout(m_context->getGlobalDescriptorSetLayout())
+            .addDescriptorSetLayout(context->getGlobalDescriptorSetLayout())
             .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
-            .build(m_context);
+            .build(context);
     m_shaderLayouts["PointCloud"] = std::move(pcLayout);
 
     // Create point cloud shader
-    auto pcShader = std::make_unique<PointCloudShader>(m_context, m_shaderLayouts["PointCloud"].get());
+    auto pcShader = std::make_unique<PointCloudShader>(context, m_shaderLayouts["PointCloud"].get());
     m_shaders["PointCloud"] = std::move(pcShader);
 }
 
@@ -189,7 +204,10 @@ bool MainScene::onEvent(const Event& event) {
 
                     // 256개 노드 용량 설정 (약 2GB VRAM)
                     auto pointCloudManager = std::make_unique<PointCloudDataManager>(
-                        m_context, m_transferManager.get(), fileManager.get(), 256
+                        m_application->getContext(),
+                        m_transferManager.get(),
+                        fileManager.get(),
+                        256
                     );
 
                     // 로드된 모델이 보이도록 카메라 이동
@@ -278,10 +296,16 @@ void MainScene::postUpdate(float elapsedTimeSec) {
 }
 
 void MainScene::render(RenderQueue& queue) {
+    queue.setPointSizeParams(m_pointSizeMultiplier, m_pointSizeMin, m_pointSizeMax);\
+        
+    if (m_skybox) {
+        m_skybox->applyToQueue(queue);
+    }
+
     if (m_mainCamera) {
         m_mainCamera->applyToQueue(queue);
     }
-    queue.setPointSizeParams(m_pointSizeMultiplier, m_pointSizeMin, m_pointSizeMax);
+    
 
     for (Object* obj : m_rootObjects) {
         if (obj) {

@@ -6,6 +6,8 @@
 #include "PointCloudManager.h"
 #include "FileManager.h"
 #include "Shader.h"
+#include "ShaderLayout.h"
+#include "Texture.h"
 
 //
 // ================ Object ================
@@ -255,4 +257,163 @@ void PointCloudObject::render(RenderQueue& queue) {
     }
 
     Object::render(queue);
+}
+
+//
+// ================ SkyboxObject ================
+//
+
+SkyboxObject::SkyboxObject(RenderContext* context, VkCommandBuffer cmd) : m_context(context) {
+    createShader();
+    createUniformBuffer();
+    createCubemap(cmd);
+    createDescriptorSet();
+}
+
+SkyboxObject::~SkyboxObject() {
+    if (m_context) {
+        if (m_buffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_context->getAllocator(), m_buffer, m_allocation);
+        }
+
+        m_shader.reset();
+        m_shaderLayout.reset();
+        m_texture.reset();
+    }
+}
+
+void SkyboxObject::applyToQueue(RenderQueue& queue) {
+    queue.setSkyboxObject(this);
+}
+
+void SkyboxObject::drawDirectly(VkCommandBuffer cmd) {
+    if (m_dirty) {
+        updateDescriptorSet();
+        m_dirty = false;
+    }
+
+    m_shader->bind(cmd);
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_shaderLayout->getPipelineLayout(),
+        1,
+        1,
+        &m_descriptorSet,
+        0,
+        nullptr
+    );
+    vkCmdDraw(cmd, 36, 1, 0, 0);
+}
+
+void SkyboxObject::createShader() {
+    ShaderLayoutBuilder builder;
+    builder.addDescriptorSetLayout(m_context->getGlobalDescriptorSetLayout());
+    builder.addDescriptorSetLayout({
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}
+    });
+    m_shaderLayout = builder.build(m_context);
+    m_shader = std::make_unique<SkyboxShader>(m_context, m_shaderLayout.get());
+}
+
+void SkyboxObject::createUniformBuffer() {
+    VkBufferCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    createInfo.size = sizeof(SkyboxParams);
+    createInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+
+    VkResult res = vmaCreateBuffer(
+        m_context->getAllocator(),
+        &createInfo,
+        &allocInfo,
+        &m_buffer,
+        &m_allocation,
+        nullptr
+    );
+    if (res != VK_SUCCESS) {
+        throw std::runtime_error(
+            std::format(
+                "Failed to create skybox uniform buffer! (CODE:{:#08x})",
+                (int)res
+            )
+        );
+    }
+}
+
+void SkyboxObject::createCubemap(VkCommandBuffer cmd) {
+    const std::filesystem::path filePath{"./assets/skybox.ktx2"};
+    try {
+        m_texture = KtxTextureBuilder().setFile(filePath, true).build(m_context, cmd);
+    }
+    catch (const std::exception& e) {
+        spdlog::warn(e.what());
+    }
+
+    if (m_texture == nullptr) {
+        uint32_t cubeMapColors[6] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+        std::vector<SubresourceData> subresources(6);
+        for (size_t i = 0; i < subresources.size(); ++i) {
+            subresources[i].arrayLayer = static_cast<uint32_t>(i);
+            subresources[i].mipLevel = 0;
+            subresources[i].width = 1;
+            subresources[i].height = 1;
+            subresources[i].size = 4;
+            subresources[i].offset = static_cast<uint32_t>(i * 4);
+        }
+
+        m_texture = MemoryTextureBuilder()
+                        .setRawDataWithSubresources(reinterpret_cast<const uint8_t*>(cubeMapColors), sizeof(cubeMapColors), 1, 1, 1, 6, VK_FORMAT_R8G8B8A8_SRGB, subresources)
+                        .build(m_context, cmd);
+    }
+}
+
+void SkyboxObject::createDescriptorSet() {
+    const auto& layout = m_shaderLayout->getDescriptorSetLayouts();
+    m_descriptorSet = m_context->allocDescriptorSet(layout[1]);
+}
+
+void SkyboxObject::updateDescriptorSet() {
+    void* data = nullptr;
+    vmaMapMemory(m_context->getAllocator(), m_allocation, &data);
+    memcpy(data, &m_params, sizeof(SkyboxParams));
+    vmaUnmapMemory(m_context->getAllocator(), m_allocation);
+
+    std::vector<VkWriteDescriptorSet> writes(2);
+    
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = m_buffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(SkyboxParams);
+
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_descriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &bufferInfo;
+
+    VkDescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = m_texture->getImageView();
+    imageInfo.sampler = m_texture->getSampler();
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(
+        m_context->getDevice(),
+        static_cast<uint32_t>(writes.size()),
+        writes.data(),
+        0,
+        nullptr
+    );
 }

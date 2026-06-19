@@ -11,6 +11,14 @@
     "spdlog",
     "glfw3",
     "glm",
+    "stb",
+    {
+      "name": "ktx",
+      "features": [
+        "tools",
+        "vulkan"
+      ]
+    },
     {
       "name": "imgui",
       "features": [

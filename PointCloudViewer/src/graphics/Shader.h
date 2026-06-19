@@ -90,3 +90,18 @@ public:
     PointCloudShader(RenderContext* context, ShaderLayout* layout);
     virtual ~PointCloudShader() = default;
 };
+
+//
+// =============== SkyboxShader ===============
+//
+
+/// @brief 스카이박스 렌더링에 특화된 파이프라인 및 셰이더 설정을 처리하는 클래스입니다.
+class SkyboxShader : public GraphicsShader {
+public:
+    SkyboxShader() = delete;
+    SkyboxShader(const SkyboxShader&) = delete;
+    SkyboxShader& operator=(const SkyboxShader&) = delete;
+
+    SkyboxShader(RenderContext* context, ShaderLayout* layout);
+    virtual ~SkyboxShader() = default;
+};

@@ -232,3 +232,48 @@ PointCloudShader::PointCloudShader(RenderContext* context, ShaderLayout* layout)
     vkDestroyShaderModule(m_context->getDevice(), vertModule, nullptr);
     vkDestroyShaderModule(m_context->getDevice(), fragModule, nullptr);
 }
+
+//
+// =============== SkyboxShader ===============
+//
+
+SkyboxShader::SkyboxShader(RenderContext* context, ShaderLayout* layout) 
+    : GraphicsShader(context, layout) 
+{    
+    // ----- Load shader binary -----
+    auto vertCode = readSPIRVFile("./shaders/skybox.vert.spv");
+    auto fragCode = readSPIRVFile("./shaders/skybox.frag.spv");
+
+    VkShaderModule vertModule = createShaderModule(vertCode);
+    VkShaderModule fragModule = createShaderModule(fragCode);
+    
+    // ------ Setup shaders ------
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragModule;
+    fragShaderStageInfo.pName = "main";
+    
+    const std::vector<VkPipelineShaderStageCreateInfo> shaderStages = {
+        vertShaderStageInfo, fragShaderStageInfo
+    };
+    
+    RenderPipelineStates states;
+    states.inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    states.rasterizer.cullMode = VK_CULL_MODE_NONE;
+    states.depthStencil.depthWriteEnable = VK_FALSE;
+    states.depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+    // ----- Create graphics pipeline -----
+    setupRenderPipeline(states, shaderStages);
+
+    // ----- Cleanup -----
+    vkDestroyShaderModule(m_context->getDevice(), vertModule, nullptr);
+    vkDestroyShaderModule(m_context->getDevice(), fragModule, nullptr);
+}

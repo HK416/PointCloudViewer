@@ -21,6 +21,10 @@
 #include <spdlog/cfg/env.h>
 #include <spdlog/fmt/ostr.h>
 
+#include <ktx.h>
+#include <ktxvulkan.h>
+#include <stb_image.h>
+
 #include <tinyply.h>
 #include <laszip/laszip_api.h>
 
