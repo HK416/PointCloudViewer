@@ -75,12 +75,28 @@ bool MainScene::onEvent(const Event& event) {
             glm::vec2 delta = pos - m_lastMousePos;
             float sensitivity = 0.003f;
             
-            glm::vec3 euler = m_mainCamera->getTransform().getEulerAngles();
+            // 마우스 이동량에 따른 회전 각도 계산 (라디안)
+            float angleY = glm::radians(-delta.x * sensitivity * 100.0f);
+            float angleX = glm::radians(-delta.y * sensitivity * 100.0f);
             
-            float pitchAngle = euler.x - delta.y * sensitivity * 100.0f;
-            float rollAngle  = euler.z - delta.x * sensitivity * 100.0f;
+            // World Y축(0, 1, 0)과 Local X축(1, 0, 0) 기준의 회전 쿼터니언 생성
+            glm::quat rotY = glm::angleAxis(angleY, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::quat rotX = glm::angleAxis(angleX, glm::vec3(1.0f, 0.0f, 0.0f));
             
-            m_mainCamera->getTransform().setRotationEuler(glm::vec3(pitchAngle, 0.0f, rollAngle));
+            // 현재 회전값에 X, Y 회전을 우선 모두 적용한 결과(nextRot)를 계산
+            glm::quat currentRot = m_mainCamera->getTransform().getRotation();
+            glm::quat nextRot = rotY * currentRot * rotX;
+            
+            // 적용된 회전의 로컬 Up 벡터(+Y)가 월드 공간에서 어디를 향하는지 계산
+            glm::vec3 up = nextRot * glm::vec3(0.0f, 1.0f, 0.0f);
+            
+            // Up 벡터의 월드 Y 성분이 0에 가까워지면(카메라가 90도에 가깝게 위나 아래를 보면) 
+            // 뒤집히는 것을 방지하기 위해 Pitch(X축) 회전을 제외하고 Yaw(Y축) 회전만 적용
+            if (up.y < 0.05f) {
+                nextRot = rotY * currentRot;
+            }
+            
+            m_mainCamera->getTransform().setRotation(nextRot);
         }
         m_lastMousePos = pos;
         return true;
