@@ -80,7 +80,7 @@ public:
     virtual const glm::mat4& getViewMatrix() const = 0;
     virtual const glm::mat4& getProjectionMatrix() const = 0;
 
-    void applyToQueue(RenderQueue& queue);
+    virtual void applyToQueue(RenderQueue& queue) = 0;
 };
 
 
@@ -107,6 +107,8 @@ public:
     float getAspectRatio() const { return m_aspect; }
     float getNearZ() const { return m_nearZ; }
     float getFarZ() const { return m_farZ; }
+
+    virtual void applyToQueue(RenderQueue& queue) override;
 
     virtual const glm::mat4& getViewMatrix() const override;
     virtual const glm::mat4& getProjectionMatrix() const override;

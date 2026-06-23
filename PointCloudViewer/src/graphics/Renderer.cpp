@@ -287,12 +287,17 @@ std::vector<const char*> RenderContext::getRequiredExtensions() {
 // ================ RenderSwapchain ================
 //
 
-RenderSwapchain::RenderSwapchain(RenderContext* context, GLFWwindow* window) 
-    : m_context(context) {
+RenderSwapchain::RenderSwapchain(
+    RenderContext* context,
+    GLFWwindow* window,
+    VkSwapchainKHR oldSwapchain
+) : m_context(context)
+{
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
 
-    createSwapchainResources(width, height);
+    createSwapchainResources(width, height, oldSwapchain);
+    createColorResources(width, height);
     createDepthResources(width, height);
 }
 
@@ -304,6 +309,14 @@ RenderSwapchain::~RenderSwapchain() {
 
         if (m_depthImage != VK_NULL_HANDLE) {
             vmaDestroyImage(m_context->getAllocator(), m_depthImage, m_depthAllocation);
+        }
+
+        if (m_colorImageView != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_context->getDevice(), m_colorImageView, nullptr);
+        }
+
+        if (m_colorImage != VK_NULL_HANDLE) {
+            vmaDestroyImage(m_context->getAllocator(), m_colorImage, m_colorAllocation);
         }
 
         for (VkImageView view : m_swapchainImageViews) {
@@ -318,7 +331,7 @@ RenderSwapchain::~RenderSwapchain() {
     }
 }
 
-void RenderSwapchain::createSwapchainResources(int width, int height) {
+void RenderSwapchain::createSwapchainResources(int width, int height, VkSwapchainKHR oldSwapchain) {
     VkSurfaceCapabilitiesKHR caps;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_context->getPhysicalDevice(), m_context->getSurface(), &caps);
 
@@ -344,6 +357,7 @@ void RenderSwapchain::createSwapchainResources(int width, int height) {
     m_extent = createInfo.imageExtent;
     createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = oldSwapchain;
 
     VkResult res = vkCreateSwapchainKHR(m_context->getDevice(), &createInfo, nullptr, &m_swapchain);
     if (res != VK_SUCCESS) {
@@ -379,58 +393,173 @@ void RenderSwapchain::createSwapchainResources(int width, int height) {
     }
 }
 
-void RenderSwapchain::createDepthResources(int width, int height) {
-    VkImageCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    createInfo.imageType = VK_IMAGE_TYPE_2D;
-    createInfo.extent.width = static_cast<uint32_t>(width);
-    createInfo.extent.height = static_cast<uint32_t>(height);
-    createInfo.extent.depth = 1;
-    createInfo.mipLevels = 1;
-    createInfo.arrayLayers = 1;
-    createInfo.format = depthImageFormat;
-    createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    createInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+void RenderSwapchain::createColorResources(int width, int height) {
+    // Create Image
+    {
+        VkImageCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        createInfo.imageType = VK_IMAGE_TYPE_2D;
+        createInfo.format = swapchainImageFormat;
+        createInfo.extent.width = static_cast<uint32_t>(width);
+        createInfo.extent.height = static_cast<uint32_t>(height);
+        createInfo.extent.depth = 1;
+        createInfo.mipLevels = 1;
+        createInfo.arrayLayers = 1;
+        createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        createInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocInfo.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    VkResult res = vmaCreateImage(
-        m_context->getAllocator(),
-        &createInfo,
-        &allocInfo,
-        &m_depthImage,
-        &m_depthAllocation,
-        nullptr
-    );
-    if (res != VK_SUCCESS) {
-        throw std::runtime_error(
-            std::format(
-                "Failed to create depth image via VMA! (CODE:{:#08x})", (int)res
-            )
+        VkResult res = vmaCreateImage(
+            m_context->getAllocator(),
+            &createInfo,
+            &allocInfo,
+            &m_colorImage,
+            &m_colorAllocation,
+            nullptr
         );
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create color image via VMA! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
     }
 
-    VkImageViewCreateInfo viewInfo = {};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = m_depthImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = depthImageFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Create Image View
+    {
+        VkImageViewCreateInfo viewInfo = {};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_colorImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = swapchainImageFormat;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.layerCount = 1;
 
-    res = vkCreateImageView(m_context->getDevice(), &viewInfo, nullptr, &m_depthImageView);
-    if (res != VK_SUCCESS) {
-        throw std::runtime_error(
-            std::format(
-                "Failed to create depth image view! (CODE:{:#08x})", (int)res
-            )
+        VkResult res = vkCreateImageView(m_context->getDevice(), &viewInfo, nullptr, &m_colorImageView);
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create color image view! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
+    }
+
+    // Create Image Sampler
+    {
+        VkSamplerCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        createInfo.minFilter = VK_FILTER_LINEAR;
+        createInfo.magFilter = VK_FILTER_LINEAR;
+        createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+        createInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+        createInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+
+        VkResult res = vkCreateSampler(m_context->getDevice(), &createInfo, nullptr, &m_colorSampler);
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create color image sampler! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
+    }
+}
+
+void RenderSwapchain::createDepthResources(int width, int height) {
+    // Create Image
+    {
+        VkImageCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        createInfo.imageType = VK_IMAGE_TYPE_2D;
+        createInfo.extent.width = static_cast<uint32_t>(width);
+        createInfo.extent.height = static_cast<uint32_t>(height);
+        createInfo.extent.depth = 1;
+        createInfo.mipLevels = 1;
+        createInfo.arrayLayers = 1;
+        createInfo.format = depthImageFormat;
+        createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        createInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocInfo.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+        VkResult res = vmaCreateImage(
+            m_context->getAllocator(),
+            &createInfo,
+            &allocInfo,
+            &m_depthImage,
+            &m_depthAllocation,
+            nullptr
         );
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create depth image via VMA! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
+    }
+
+    // Create Image View
+    {
+        VkImageViewCreateInfo viewInfo = {};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_depthImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = depthImageFormat;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        VkResult res = vkCreateImageView(
+            m_context->getDevice(), &viewInfo, nullptr, &m_depthImageView
+        );
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create depth image view! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
+    }
+
+    // Create Image Sampler
+    {
+        VkSamplerCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        createInfo.minFilter = VK_FILTER_NEAREST;
+        createInfo.magFilter = VK_FILTER_NEAREST;
+        createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        createInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        createInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+        VkResult res = vkCreateSampler(m_context->getDevice(), &createInfo, nullptr, &m_depthSampler);
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error(
+                std::format(
+                    "Failed to create depth image sample! (CODE:{:#08x})",
+                    (int)res
+                )
+            );
+        }
     }
 }
 
@@ -568,6 +697,16 @@ void RenderUtils::transitionImageLayout(
         barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else {
         throw std::invalid_argument("Unsupported layout transition!");
     }
@@ -639,25 +778,35 @@ bool operator<(const PointCloudDrawCmd& a, const PointCloudDrawCmd& b) {
 //
 
 void RenderQueue::clear() {
-    m_globalData.view = glm::mat4{1.0f};
-    m_globalData.proj = glm::mat4{1.0f};
-    m_globalData.cameraPos = glm::vec3{0.0f};
+    globalData.view = glm::mat4{1.0f};
+    globalData.proj = glm::mat4{1.0f};
+    globalData.cameraPos = glm::vec3{0.0f};
 }
 
-void RenderQueue::setCamera(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& pos) {
-    m_globalData.view = view;
-    m_globalData.proj = proj;
-    m_globalData.cameraPos = pos;
+void RenderQueue::setCamera(
+    const glm::mat4& view, 
+    const glm::mat4& proj, 
+    float nearPlane,
+    float farPlane,
+    const glm::vec3& pos
+) {
+    globalData.view = view;
+    globalData.proj = proj;
+    globalData.cameraPos = pos;
+    edlParams.nearPlane = nearPlane;
+    edlParams.farPlane = farPlane;
 }
 
 void RenderQueue::setPointSizeParams(float multiplier, float minSize, float maxSize) {
-    m_globalData.pointSizeMultiplier = multiplier;
-    m_globalData.pointSizeMin = minSize;
-    m_globalData.pointSizeMax = maxSize;
+    globalData.pointSizeMultiplier = multiplier;
+    globalData.pointSizeMin = minSize;
+    globalData.pointSizeMax = maxSize;
 }
 
-void RenderQueue::setSkyboxObject(SkyboxObject* skybox) {
-    m_skybox = skybox;
+void RenderQueue::setEDLParams(float strength, float radius, bool endalbed) {
+    edlParams.strength = strength;
+    edlParams.radius = radius;
+    edlEnabled = endalbed;
 }
 
 void RenderQueue::submitPointCloudCmd(const PointCloudDrawCmd& cmd) {

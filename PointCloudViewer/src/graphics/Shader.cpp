@@ -117,7 +117,9 @@ void GraphicsShader::bind(VkCommandBuffer cmd) {
 
 void GraphicsShader::setupRenderPipeline(
     const RenderPipelineStates& states,
-    const std::vector<VkPipelineShaderStageCreateInfo>& stages
+    const std::vector<VkPipelineShaderStageCreateInfo>& stages,
+    VkFormat colorFormat,
+    VkFormat depthFormat
 ) {
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -135,8 +137,8 @@ void GraphicsShader::setupRenderPipeline(
     VkPipelineRenderingCreateInfo renderingInfo = {};
     renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachmentFormats = &RenderSwapchain::swapchainImageFormat;
-    renderingInfo.depthAttachmentFormat = RenderSwapchain::depthImageFormat;
+    renderingInfo.pColorAttachmentFormats = &colorFormat;
+    renderingInfo.depthAttachmentFormat = depthFormat;
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -184,7 +186,6 @@ PointCloudShader::PointCloudShader(RenderContext* context, ShaderLayout* layout)
     VkShaderModule vertModule = createShaderModule(vertCode);
     VkShaderModule fragModule = createShaderModule(fragCode);
     
-    // ------ Setup shaders ------
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -225,10 +226,13 @@ PointCloudShader::PointCloudShader(RenderContext* context, ShaderLayout* layout)
     states.vertexInput.pVertexAttributeDescriptions = attributeDescriptions.data();
     states.inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 
-    // ----- Create graphics pipeline -----
-    setupRenderPipeline(states, shaderStages);
+    setupRenderPipeline(
+        states,
+        shaderStages,
+        RenderSwapchain::swapchainImageFormat,
+        RenderSwapchain::depthImageFormat
+    );
 
-    // ----- Cleanup -----
     vkDestroyShaderModule(m_context->getDevice(), vertModule, nullptr);
     vkDestroyShaderModule(m_context->getDevice(), fragModule, nullptr);
 }
@@ -247,7 +251,6 @@ SkyboxShader::SkyboxShader(RenderContext* context, ShaderLayout* layout)
     VkShaderModule vertModule = createShaderModule(vertCode);
     VkShaderModule fragModule = createShaderModule(fragCode);
     
-    // ------ Setup shaders ------
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -270,10 +273,59 @@ SkyboxShader::SkyboxShader(RenderContext* context, ShaderLayout* layout)
     states.depthStencil.depthWriteEnable = VK_FALSE;
     states.depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-    // ----- Create graphics pipeline -----
-    setupRenderPipeline(states, shaderStages);
+    setupRenderPipeline(
+        states,
+        shaderStages,
+        RenderSwapchain::swapchainImageFormat,
+        RenderSwapchain::depthImageFormat
+    );
 
-    // ----- Cleanup -----
+    vkDestroyShaderModule(m_context->getDevice(), vertModule, nullptr);
+    vkDestroyShaderModule(m_context->getDevice(), fragModule, nullptr);
+}
+
+//
+// =============== EDLShader ===============
+//
+
+EDLShader::EDLShader(RenderContext* context, ShaderLayout* layout) 
+    : GraphicsShader(context, layout) 
+{
+    auto vertCode = readSPIRVFile("./shaders/edl.vert.spv");
+    auto fragCode = readSPIRVFile("./shaders/edl.frag.spv");
+
+    VkShaderModule vertModule = createShaderModule(vertCode);
+    VkShaderModule fragModule = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragModule;
+    fragShaderStageInfo.pName = "main";
+    
+    const std::vector<VkPipelineShaderStageCreateInfo> shaderStages = {
+        vertShaderStageInfo, fragShaderStageInfo
+    };
+    
+    RenderPipelineStates states;
+    states.inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    states.rasterizer.cullMode = VK_CULL_MODE_NONE;
+    states.depthStencil.depthTestEnable = VK_FALSE;
+    states.depthStencil.depthWriteEnable = VK_FALSE;
+
+    setupRenderPipeline(
+        states,
+        shaderStages,
+        RenderSwapchain::swapchainImageFormat,
+        VK_FORMAT_UNDEFINED
+    );
+
     vkDestroyShaderModule(m_context->getDevice(), vertModule, nullptr);
     vkDestroyShaderModule(m_context->getDevice(), fragModule, nullptr);
 }

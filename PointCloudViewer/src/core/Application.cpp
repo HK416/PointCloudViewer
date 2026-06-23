@@ -13,6 +13,8 @@ Application::Application(GLFWwindow* window) : m_window(window) {
         m_commandManager = std::make_unique<CommandManager>(m_context.get(), m_swapchain.get());
 
         createGlobalResources();
+        createEDLResources();
+        updateEDLDescriptorSet();
         initImGuiResources();
         createSyncObjects();
 
@@ -75,6 +77,8 @@ Application::~Application() {
         }
 
         cleanupGlobalResources();
+        m_edlShader.reset();
+        m_edlLayout.reset();
 
         m_commandManager.reset();
         m_swapchain.reset();
@@ -145,18 +149,21 @@ void Application::drawFrame(float elapsedTimeSec) {
 
     RenderQueue queue;
 
-    // 1. 준비: 렌더 큐 수집 및 정렬, 전역 데이터 UBO 업데이트
     prepareRenderQueue(imageIndex, queue);
 
-    // 2. 메인 패스: 파이프라인 배리어, 렌더 패스 시작, 렌더 큐 일괄 처리, 프레젠트 배리어
-    renderMainPass(cmd, imageIndex, queue);
+    if (queue.edlEnabled) {
+        renderMainPass(cmd, imageIndex, queue);
+        renderEDLPass(cmd, imageIndex, queue);
+        renderGuiPass(cmd, imageIndex);
+    } else {
+        renderSinglePass(cmd, imageIndex, queue);
+    }
 
     res = vkEndCommandBuffer(cmd);
     if (res != VK_SUCCESS) {
         throw std::runtime_error(std::format("Failed to end recording command buffer! (CODE:{:#08x})", (int)res));
     }
 
-    // 큐 제출
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
@@ -181,7 +188,6 @@ void Application::drawFrame(float elapsedTimeSec) {
         );
     }
 
-    // 프레젠테이션
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -217,7 +223,6 @@ void Application::createGlobalResources() {
     m_globalResources.resize(imageCount);
 
     for (uint32_t i = 0; i < imageCount; ++i) {
-        // 전역 유니폼 버퍼 객체 생성
         VkBufferCreateInfo uboCreateInfo = {};
         uboCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         uboCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -249,10 +254,8 @@ void Application::createGlobalResources() {
 
         m_globalResources[i].mappedGlobalData = allocationInfo.pMappedData;
 
-        // 디스크립터 세트 할당
         m_globalResources[i].descriptorSet = m_context->allocDescriptorSet(m_context->getGlobalDescriptorSetLayout());
 
-        // 디스크립터 세트 쓰기 업데이트
         VkDescriptorBufferInfo uboBufferInfo = {};
         uboBufferInfo.buffer = m_globalResources[i].buffer;
         uboBufferInfo.range = sizeof(GlobalData);
@@ -274,6 +277,58 @@ void Application::createGlobalResources() {
             nullptr
         );
     }
+}
+
+void Application::createEDLResources() {
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = {
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+    };
+
+    m_edlLayout = ShaderLayoutBuilder()
+                      .addDescriptorSetLayout(layoutBindings)
+                      .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(EDLParams))
+                      .build(m_context.get());
+
+    m_edlShader = std::make_unique<EDLShader>(m_context.get(), m_edlLayout.get());
+
+    const auto& layouts = m_edlLayout->getDescriptorSetLayouts();
+    m_edlDescriptorSet = m_context->allocDescriptorSet(layouts[0]);
+}
+
+void Application::updateEDLDescriptorSet() {
+    VkDescriptorImageInfo colorInfo = {};
+    colorInfo.sampler = m_swapchain->getColorSampler();
+    colorInfo.imageView = m_swapchain->getColorImageView();
+    colorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo depthInfo = {};
+    depthInfo.sampler = m_swapchain->getDepthSampler();
+    depthInfo.imageView = m_swapchain->getDepthImageView();
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkWriteDescriptorSet, 2> writes = {};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_edlDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &colorInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_edlDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &depthInfo;
+
+    vkUpdateDescriptorSets(
+        m_context->getDevice(),
+        static_cast<uint32_t>(writes.size()),
+        writes.data(),
+        0,
+        nullptr
+    );
 }
 
 void Application::initImGuiResources() {
@@ -367,12 +422,14 @@ void Application::recreateSwapchain() {
     
     cleanupGlobalResources();
     m_commandManager.reset();
-    m_swapchain.reset();
 
-    m_swapchain = std::make_unique<RenderSwapchain>(m_context.get(), m_window);
+    auto newSwapchain = std::make_unique<RenderSwapchain>(m_context.get(), m_window, m_swapchain->getSwapchain());
+    m_swapchain = std::move(newSwapchain);
+
     ImGui_ImplVulkan_SetMinImageCount(m_swapchain->numSwapchainImages());
     m_commandManager = std::make_unique<CommandManager>(m_context.get(), m_swapchain.get());
     createGlobalResources();
+    updateEDLDescriptorSet();
 }
 
 void Application::prepareRenderQueue(uint32_t frameIndex, RenderQueue& queue) {
@@ -384,11 +441,10 @@ void Application::prepareRenderQueue(uint32_t frameIndex, RenderQueue& queue) {
     m_scene->render(queue);
     queue.sort();
 
-    GlobalData* ubo = static_cast<GlobalData*>(m_globalResources[frameIndex].mappedGlobalData);
-    *ubo = queue.getGlobalData();
+    memcpy(m_globalResources[frameIndex].mappedGlobalData, &queue.globalData, sizeof(GlobalData));
 }
 
-void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue) {
+void Application::renderSinglePass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue) {
     RenderUtils::transitionImageLayout(
         cmd,
         m_swapchain->getImages()[frameIndex],
@@ -396,7 +452,6 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     );
 
-    // 깊이 이미지를 DEPTH_ATTACHMENT_OPTIMAL 레이아웃으로 전환
     RenderUtils::transitionImageLayout(
         cmd,
         m_swapchain->getDepthImage(),
@@ -405,7 +460,6 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
         VK_IMAGE_ASPECT_DEPTH_BIT
     );
 
-    // 동적 렌더링 시작
     VkExtent2D extent = m_swapchain->getExtent();
 
     VkRenderingAttachmentInfo colorAttachment = {};
@@ -489,7 +543,7 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
             currentManager->drawNodes(cmd, currentLayout, batchNodes);
         }
 
-        SkyboxObject* skybox = queue.getSkyboxObject();
+        SkyboxObject* skybox = queue.skybox;
         if (skybox != nullptr) {
             vkCmdBindDescriptorSets(
                 cmd,
@@ -513,7 +567,247 @@ void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, Rende
 
     vkCmdEndRendering(cmd);
 
-    // 스왑체인 이미지를 PRESENT_SRC_KHR 레이아웃으로 전환
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getImages()[frameIndex],
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    );
+}
+
+void Application::renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue) {
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getColorImage(),
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    );
+
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getDepthImage(),
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_ASPECT_DEPTH_BIT
+    );
+
+    VkExtent2D extent = m_swapchain->getExtent();
+
+    VkRenderingAttachmentInfo colorAttachment = {};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = m_swapchain->getColorImageView();
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color = { 0.25f, 0.25f, 0.25f, 1.0f };
+
+    VkRenderingAttachmentInfo depthAttachment = {};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = m_swapchain->getDepthImageView();
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil = {1.0f, 0};
+
+    VkRenderingInfo renderingInfo = {};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = extent;
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = &depthAttachment;
+
+    vkCmdBeginRendering(cmd, &renderingInfo);
+
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset = { 0, 0 };
+    scissor.extent = renderingInfo.renderArea.extent;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    if (m_scene) {
+        m_scene->onPreRender(cmd);
+
+        const auto& ptCmds = queue.getPointCloudCmds();
+        PointCloudDataManager* currentManager = nullptr;
+        Shader* currentShader = nullptr;
+        VkPipelineLayout currentLayout = VK_NULL_HANDLE;
+        std::vector<RenderNode> batchNodes;
+
+        for (const auto& drawCmd : ptCmds) {
+            bool stateChanged = (currentManager != drawCmd.manager) || (currentShader != drawCmd.shader);
+            if (stateChanged) {
+                if (currentManager != nullptr && !batchNodes.empty()) {
+                    currentManager->bindGlobalBuffer(cmd);
+                    currentManager->drawNodes(cmd, currentLayout, batchNodes);
+                    batchNodes.clear();
+                }
+                if (currentShader != drawCmd.shader) {
+                    currentShader = drawCmd.shader;
+                    if (currentShader && currentShader->getLayout()) {
+                        currentLayout = currentShader->getLayout()->getPipelineLayout();
+                        currentShader->bind(cmd);
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentLayout, 0, 1, &m_globalResources[frameIndex].descriptorSet, 0, nullptr);
+                    } else {
+                        spdlog::error("[Render] Invalid shader or layout in draw command!");
+                        currentLayout = VK_NULL_HANDLE;
+                    }
+                }
+                currentManager = drawCmd.manager;
+            }
+            if (currentLayout != VK_NULL_HANDLE) {
+                batchNodes.push_back(drawCmd.node);
+            }
+        }
+
+        if (currentManager != nullptr && !batchNodes.empty()) {
+            currentManager->bindGlobalBuffer(cmd);
+            currentManager->drawNodes(cmd, currentLayout, batchNodes);
+        }
+
+        SkyboxObject* skybox = queue.skybox;
+        if (skybox != nullptr) {
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                skybox->getShaderLayout()->getPipelineLayout(),
+                0,
+                1,
+                &m_globalResources[frameIndex].descriptorSet,
+                0,
+                nullptr
+            );
+            skybox->drawDirectly(cmd);
+        }
+
+        m_scene->onPostRender(cmd);
+    }
+
+    vkCmdEndRendering(cmd);
+
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getColorImage(),
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getDepthImage(),
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_ASPECT_DEPTH_BIT
+    );
+}
+
+void Application::renderEDLPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue) {
+    auto extent = m_swapchain->getExtent();
+
+    RenderUtils::transitionImageLayout(
+        cmd,
+        m_swapchain->getImages()[frameIndex],
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    );
+
+    VkRenderingAttachmentInfo colorAttachment = {};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = m_swapchain->getImageViews()[frameIndex];
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    VkRenderingInfo renderingInfo = {};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = extent;
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = nullptr;
+
+    vkCmdBeginRendering(cmd, &renderingInfo);
+
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = renderingInfo.renderArea.extent;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    if (m_edlShader && m_edlLayout) {
+        m_edlShader->bind(cmd);
+
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_edlLayout->getPipelineLayout(),
+            0,
+            1, &m_edlDescriptorSet,
+            0, nullptr
+        );
+
+        queue.edlParams.screenWidth = static_cast<float>(extent.width);
+        queue.edlParams.screenHeight = static_cast<float>(extent.height);
+
+        vkCmdPushConstants(
+            cmd,
+            m_edlLayout->getPipelineLayout(),
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(EDLParams),
+            &queue.edlParams
+        );
+
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+    }
+
+    vkCmdEndRendering(cmd);
+}
+
+void Application::renderGuiPass(VkCommandBuffer cmd, uint32_t frameIndex) {
+    VkRenderingAttachmentInfo colorAttachment = {};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = m_swapchain->getImageViews()[frameIndex];
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfo renderingInfo = {};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = m_swapchain->getExtent();
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = nullptr;
+
+    vkCmdBeginRendering(cmd, &renderingInfo);
+
+    m_scene->onGUI();
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
+    vkCmdEndRendering(cmd);
+
     RenderUtils::transitionImageLayout(
         cmd,
         m_swapchain->getImages()[frameIndex],

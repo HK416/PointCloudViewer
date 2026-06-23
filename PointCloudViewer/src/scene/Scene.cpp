@@ -312,8 +312,9 @@ void MainScene::postUpdate(float elapsedTimeSec) {
 }
 
 void MainScene::render(RenderQueue& queue) {
-    queue.setPointSizeParams(m_pointSizeMultiplier, m_pointSizeMin, m_pointSizeMax);\
-        
+    queue.setPointSizeParams(m_pointSizeMultiplier, m_pointSizeMin, m_pointSizeMax);
+    queue.setEDLParams(m_edlStrength, m_edlRadius, m_edlEnabled);
+
     if (m_skybox) {
         m_skybox->applyToQueue(queue);
     }
@@ -361,6 +362,26 @@ void MainScene::onGUI() {
         ImGui::SliderFloat("Size Multiplier", &m_pointSizeMultiplier, 10.0f, 2000.0f);
         ImGui::SliderFloat("Min Point Size", &m_pointSizeMin, 1.0f, 5.0f);
         ImGui::SliderFloat("Max Point Size", &m_pointSizeMax, 1.0f, 50.0f);
+
+        ImGui::Separator();
+        ImGui::Checkbox("EDL Enabled", &m_edlEnabled);
+
+        if (m_edlEnabled) {
+            ImGui::Separator();
+            ImGui::Text("Eye Dome Lighting");
+
+            bool changed = false;
+            changed |= ImGui::SliderFloat(
+                "Strength", &m_edlStrength, 0.1f, 10.0f, "%.1f"
+            );
+            changed |=
+                ImGui::SliderFloat("Radius", &m_edlRadius, 0.5f, 5.0f, "%.1f");
+
+            if (ImGui::Button("Reset")) {
+                m_edlStrength = 3.0f;
+                m_edlRadius = 1.4f;
+            }
+        }
     }
     ImGui::End();
 }

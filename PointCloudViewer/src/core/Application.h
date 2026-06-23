@@ -4,6 +4,8 @@
 class RenderContext;
 class RenderSwapchain;
 class CommandManager;
+class ShaderLayout;
+class Shader;
 
 /// @brief 프로그램의 메인 루프 및 전역 리소스를 관리하는 애플리케이션 클래스입니다.
 class Application {
@@ -27,13 +29,18 @@ public:
 private:
     void cleanupGlobalResources();
     void createGlobalResources();
+    void createEDLResources();
+    void updateEDLDescriptorSet();
     void initImGuiResources();
     void createSyncObjects();
 
     void recreateSwapchain();
 
     void prepareRenderQueue(uint32_t frameIndex, RenderQueue& queue);
+    void renderSinglePass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue);
     void renderMainPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue);
+    void renderEDLPass(VkCommandBuffer cmd, uint32_t frameIndex, RenderQueue& queue);
+    void renderGuiPass(VkCommandBuffer cmd, uint32_t frameIndex);
 
 private:
     /// @brief 소유하지 않는 클래스 맴버 변수.
@@ -42,6 +49,10 @@ private:
     std::unique_ptr<RenderContext> m_context;
     std::unique_ptr<RenderSwapchain> m_swapchain;
     std::unique_ptr<CommandManager> m_commandManager;
+
+    std::unique_ptr<ShaderLayout> m_edlLayout;
+    std::unique_ptr<Shader> m_edlShader;
+    VkDescriptorSet m_edlDescriptorSet = VK_NULL_HANDLE;
 
     std::unique_ptr<Scene> m_scene;
 

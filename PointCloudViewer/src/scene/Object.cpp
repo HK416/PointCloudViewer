@@ -127,14 +127,6 @@ void Object::updateWorldMatrix() {
 }
 
 //
-// ================ Camera ================
-//
-
-void Camera::applyToQueue(RenderQueue& queue) {
-    queue.setCamera(getViewMatrix(), getProjectionMatrix(), getTransform().getPosition());
-}
-
-//
 // ================ PerspectiveCamera ================
 //
 
@@ -190,6 +182,16 @@ void PerspectiveCamera::setAspectRatio(float aspect) {
     setPerspective(m_fov, aspect, m_nearZ, m_farZ);
 }
 
+void PerspectiveCamera::applyToQueue(RenderQueue& queue) {
+    queue.setCamera(
+        getViewMatrix(),
+        getProjectionMatrix(),
+        m_nearZ,
+        m_farZ,
+        getTransform().getPosition()
+    );
+}
+
 const glm::mat4& PerspectiveCamera::getViewMatrix() const {
     return m_viewMatrix;
 }
@@ -216,14 +218,13 @@ PointCloudObject::PointCloudObject(
       m_pointCloudManager(std::move(pointCloudManager)) {}
 
 void PointCloudObject::render(RenderQueue& queue) {
-    const GlobalData& globalData = queue.getGlobalData();
     
-    glm::mat4 viewProj = globalData.proj * globalData.view;
+    glm::mat4 viewProj = queue.globalData.proj * queue.globalData.view;
     glm::mat4 localViewProj = viewProj * m_worldMatrix;
     Frustum frustum(localViewProj);
 
     glm::mat4 invWorld = glm::inverse(m_worldMatrix);
-    glm::vec3 localCameraPos = glm::vec3(invWorld * glm::vec4(globalData.cameraPos, 1.0f));
+    glm::vec3 localCameraPos = glm::vec3(invWorld * glm::vec4(queue.globalData.cameraPos, 1.0f));
 
     auto visibleChunks = m_octree->getVisibleChunks(frustum, localCameraPos);
 
@@ -283,7 +284,7 @@ SkyboxObject::~SkyboxObject() {
 }
 
 void SkyboxObject::applyToQueue(RenderQueue& queue) {
-    queue.setSkyboxObject(this);
+    queue.skybox = this;
 }
 
 void SkyboxObject::drawDirectly(VkCommandBuffer cmd) {

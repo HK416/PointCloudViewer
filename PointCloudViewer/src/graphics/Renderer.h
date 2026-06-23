@@ -15,6 +15,16 @@ struct alignas(16) GlobalData {
     float gamma{2.2f};
 };
 
+/// @brief Eye Dome Lighting(EDL) 후처리에 사용되는 파라미터 구조체입니다.
+struct EDLParams {
+    float screenWidth;
+    float screenHeight;
+    float strength = 3.0f;
+    float radius = 1.4f;
+    float nearPlane = 0.1f;
+    float farPlane = 1000.0f;
+};
+
 /// @brief Vulkan 인스턴스, 디바이스 등 렌더링에 필요한 핵심 환경을 초기화하고 관리하는 컨텍스트 클래스입니다.
 class RenderContext {
 public:
@@ -63,41 +73,59 @@ private:
     VkDescriptorSetLayout m_globalLayout = VK_NULL_HANDLE;
 };
 
-/// @brief 화면에 이미지를 출력하기 위한 스왑체인과 깊이 버퍼 리소스를 관리하는 클래스입니다.
+/// @brief 화면에 이미지를 출력하기 위한 스왑체인과 이미지 & 깊이 버퍼 리소스를 관리하는 클래스입니다.
 class RenderSwapchain {
 public:
     RenderSwapchain() = delete;
     RenderSwapchain(const RenderSwapchain&) = delete;
     RenderSwapchain& operator=(const RenderSwapchain&) = delete;
 
-    RenderSwapchain(RenderContext* context, GLFWwindow* window);
+    RenderSwapchain(
+        RenderContext* context,
+        GLFWwindow* window,
+        VkSwapchainKHR oldSwapchain = VK_NULL_HANDLE
+    );
     ~RenderSwapchain();
 
+    VkExtent2D getExtent() const { return m_extent; }
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     const std::vector<VkImage>& getImages() const { return m_swapchainImages; }
     const std::vector<VkImageView>& getImageViews() const { return m_swapchainImageViews; }
     uint32_t numSwapchainImages() const { return static_cast<uint32_t>(m_swapchainImageViews.size()); }
+
     VkImage getDepthImage() const { return m_depthImage; }
     VkImageView getDepthImageView() const { return m_depthImageView; }
-    VkExtent2D getExtent() const { return m_extent; }
+    VkSampler getDepthSampler() const { return m_depthSampler; }
+
+    VkImage getColorImage() const { return m_colorImage; }
+    VkImageView getColorImageView() const { return m_colorImageView; }
+    VkSampler getColorSampler() const { return m_colorSampler; }
 
 private:
-    void createSwapchainResources(int width, int height);
+    void createSwapchainResources(int width, int height, VkSwapchainKHR oldSwapchain);
+    void createColorResources(int width, int height);
     void createDepthResources(int width, int height);
 
 private:
     /// @brief 소유하지 않는 클래스 맴버 변수.
     RenderContext* m_context = nullptr;
 
+    VkExtent2D m_extent = {0, 0};
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_swapchainImages;
     std::vector<VkImageView> m_swapchainImageViews;
 
+    // Color
+    VkImage m_colorImage = VK_NULL_HANDLE;
+    VkImageView m_colorImageView = VK_NULL_HANDLE;
+    VmaAllocation m_colorAllocation = VK_NULL_HANDLE;
+    VkSampler m_colorSampler = VK_NULL_HANDLE;
+
+    // Depth
     VkImage m_depthImage = VK_NULL_HANDLE;
     VkImageView m_depthImageView = VK_NULL_HANDLE;
     VmaAllocation m_depthAllocation = VK_NULL_HANDLE;
-
-    VkExtent2D m_extent = { 0, 0 };
+    VkSampler m_depthSampler = VK_NULL_HANDLE;
 
 public:
     static const VkFormat swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -180,19 +208,27 @@ class RenderQueue {
 public:
     void clear();
 
-    void setCamera(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& pos);
+    void setCamera(
+        const glm::mat4& view,
+        const glm::mat4& proj,
+        float nearPlane,
+        float farPlane,
+        const glm::vec3& pos
+    );
     void setPointSizeParams(float multiplier, float minSize, float maxSize);
-    void setSkyboxObject(SkyboxObject* skybox);
+    void setEDLParams(float strength, float radius, bool enabled);
     void submitPointCloudCmd(const PointCloudDrawCmd& cmd);
 
     void sort();
 
-    const GlobalData& getGlobalData() const { return m_globalData; }
     const std::vector<PointCloudDrawCmd>& getPointCloudCmds() const { return m_pointCloudCmds; }
-    SkyboxObject* getSkyboxObject() const { return m_skybox; }
 
 private:
-    GlobalData m_globalData;
     std::vector<PointCloudDrawCmd> m_pointCloudCmds;
-    SkyboxObject* m_skybox = nullptr;
+
+public:
+    SkyboxObject* skybox = nullptr;
+    GlobalData globalData;
+    EDLParams edlParams;
+    bool edlEnabled = true;
 };

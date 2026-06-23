@@ -47,23 +47,23 @@
     <ClInclude Include="src\graphics\Texture.h" />
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="Shaders\point.frag">
+    <CustomBuild Include="shaders\point.frag">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
     </CustomBuild>
-    <CustomBuild Include="Shaders\point.vert">
+    <CustomBuild Include="shaders\point.vert">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)Shaders\%(Filename)%(Extension).spv"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Shaders\%(Filename)%(Extension).spv</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
     </CustomBuild>
     <CustomBuild Include="shaders\skybox.frag">
       <FileType>Document</FileType>
@@ -75,6 +75,24 @@
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
     </CustomBuild>
     <CustomBuild Include="shaders\skybox.vert">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="shaders\edl.vert">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)shaders\%(Filename)%(Extension).spv"</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)shaders\%(Filename)%(Extension).spv</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="shaders\edl.frag">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"%VULKAN_SDK%\Bin\glslc.exe" "%(FullPath)" -o "$(ProjectDir)shaders\%(Filename)%(Extension).spv"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling %(Filename)%(Extension) to SPIR-V</Message>

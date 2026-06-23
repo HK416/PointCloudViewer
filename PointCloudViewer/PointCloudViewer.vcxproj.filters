@@ -124,6 +124,12 @@
     <CustomBuild Include="shaders\skybox.vert">
       <Filter>shaders</Filter>
     </CustomBuild>
+    <CustomBuild Include="shaders\edl.vert">
+      <Filter>shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\edl.frag">
+      <Filter>shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\global.glsl">

@@ -108,6 +108,10 @@ private:
     float m_pointSizeMin = 1.0f;
     float m_pointSizeMax = 10.0f;
 
+    bool m_edlEnabled = true;
+    float m_edlStrength = 3.0f;
+    float m_edlRadius = 1.4f;
+
     std::unique_ptr<TransferManager> m_transferManager;
 
     std::queue<std::unique_ptr<Object>> m_addedObjects;

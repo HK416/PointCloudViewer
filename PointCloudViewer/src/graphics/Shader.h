@@ -72,7 +72,9 @@ public:
 protected:
     void setupRenderPipeline(
         const RenderPipelineStates& states,
-        const std::vector<VkPipelineShaderStageCreateInfo>& stages
+        const std::vector<VkPipelineShaderStageCreateInfo>& stages,
+        VkFormat colorFormat,
+        VkFormat depthFormat
     );
 };
 
@@ -104,4 +106,19 @@ public:
 
     SkyboxShader(RenderContext* context, ShaderLayout* layout);
     virtual ~SkyboxShader() = default;
+};
+
+//
+// =============== EDLShader ===============
+//
+
+/// @brief EDL 후처리를 위한 풀스크린 삼각형 파이프라인 셰이더 클래스입니다.
+class EDLShader : public GraphicsShader {
+public:
+    EDLShader() = delete;
+    EDLShader(const EDLShader&) = delete;
+    EDLShader& operator=(const EDLShader&) = delete;
+
+    EDLShader(RenderContext* context, ShaderLayout* layout);
+    virtual ~EDLShader() = default;
 };
